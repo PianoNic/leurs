@@ -42,7 +42,7 @@ async def beg(ctx):
 
     earnings = random.randrange(101)  # amount the user gets for -beg = max 101
 
-    await ctx.send(f"Someone gave you {earnings} coins!!")
+    await ctx.send(f"Diddy gave you {earnings} coins!!")
 
     users[str(ctx.author.id)]["wallet"] += earnings  # used for changing wallet amount
 
@@ -98,6 +98,42 @@ async def code(ctx):
 @client.command()
 async def geschichte(ctx):
     await ctx.send("ich habe mal david in migros getroffen und ein foto mit david gemacht. das hat mich glücklich gemacht. dann hatten wir französisch...")
+
+@client.command()
+async def david(ctx):
+    random_num_david = random.randint(1, 20)
+    jpeg_path = f"images/david/{random_num_david}.jpeg"
+    gif_path = f"images/david/{random_num_david}.gif"
+    
+    if os.path.exists(jpeg_path):
+        file = discord.File(jpeg_path)
+    elif os.path.exists(gif_path):
+        file = discord.File(gif_path)
+    else:
+        # Fallback if neither exists
+        await ctx.send("Couldn't find image for David")
+        return
+        
+    await ctx.send(file=file)
+
+@client.command()
+async def opl(ctx):
+    await ctx.send("https://habenwirmorgenopl.info (might be down)")
+
+@client.command()
+async def dsl(ctx):
+    await ctx.send("https://habenwirmorgenopl.info (might be down)")
+
+
+@client.command()
+async def ppl(ctx):
+    await ctx.send("https://habenwirmorgenopl.info (might be down)")
+
+
+@client.command()
+async def hwmo(ctx):
+    await ctx.send("https://habenwirmorgenopl.info (might be down)")
+
 
 if __name__ == "__main__":
     load_dotenv()  # Load variables from .env file
