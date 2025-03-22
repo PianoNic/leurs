@@ -101,7 +101,7 @@ class EconomyCog(commands.Cog):
             return False
         else:
             users[str(user.id)] = {}
-            users[str(user.id)]["wallet"] = 0  # starting balance
+            users[str(user.id)]["wallet"] = 50  # starting balance
             users[str(user.id)]["bank"] = 0
 
         with open('data/bank.json', 'w') as f:  # opens account for new user
@@ -131,3 +131,191 @@ class EconomyCog(commands.Cog):
                 json.dump(users, f)
                 
         return users
+
+    @commands.command()
+    async def withdraw(self, ctx, amount=None):
+        await self.open_account(ctx.author)
+        users = await self.get_bank_data()
+        user = ctx.author
+        
+        if amount is None:
+            embed = discord.Embed(
+                title="Error",
+                description="Please specify an amount to withdraw",
+                color=discord.Color.red()
+            )
+            await ctx.send(embed=embed)
+            return
+            
+        # Handle percentage-based withdrawals
+        if amount.lower() == "all":
+            amount = users[str(user.id)]["bank"]
+        elif "%" in amount:
+            try:
+                percentage = int(amount.replace("%", ""))
+                if percentage <= 0 or percentage > 100:
+                    raise ValueError
+                amount = int(users[str(user.id)]["bank"] * (percentage / 100))
+            except ValueError:
+                embed = discord.Embed(
+                    title="Error",
+                    description="Please enter a valid percentage between 1% and 100%",
+                    color=discord.Color.red()
+                )
+                await ctx.send(embed=embed)
+                return
+        else:
+            try:
+                amount = int(amount)
+            except ValueError:
+                embed = discord.Embed(
+                    title="Error",
+                    description="Please enter a valid number, percentage, or 'all'",
+                    color=discord.Color.red()
+                )
+                await ctx.send(embed=embed)
+                return
+        
+        if amount <= 0:
+            embed = discord.Embed(
+                title="Error",
+                description="Amount must be positive!",
+                color=discord.Color.red()
+            )
+            await ctx.send(embed=embed)
+            return
+            
+        if amount > users[str(user.id)]["bank"]:
+            embed = discord.Embed(
+                title="Error",
+                description="You don't have that much money in your bank!",
+                color=discord.Color.red()
+            )
+            await ctx.send(embed=embed)
+            return
+            
+        # Update balances
+        users[str(user.id)]["bank"] -= amount
+        users[str(user.id)]["wallet"] += amount
+        
+        # Save updated data
+        with open('data/bank.json', 'w') as f:
+            json.dump(users, f)
+            
+        # Create and send embed
+        embed = discord.Embed(
+            title="Withdrawal Successful",
+            description=f"You withdrew **{amount} coins** from your bank!",
+            color=discord.Color.green()
+        )
+        
+        embed.add_field(
+            name="Wallet Balance", 
+            value=f"{users[str(user.id)]['wallet']} coins",
+            inline=True
+        )
+        
+        embed.add_field(
+            name="Bank Balance", 
+            value=f"{users[str(user.id)]['bank']} coins",
+            inline=True
+        )
+        
+        embed.set_footer(text=f"Requested by {ctx.author.name}", icon_url=ctx.author.avatar.url if ctx.author.avatar else ctx.author.default_avatar.url)
+        embed.timestamp = datetime.datetime.utcnow()
+        
+        await ctx.send(embed=embed)
+
+    @commands.command()
+    async def deposit(self, ctx, amount=None):
+        await self.open_account(ctx.author)
+        users = await self.get_bank_data()
+        user = ctx.author
+        
+        if amount is None:
+            embed = discord.Embed(
+                title="Error",
+                description="Please specify an amount to deposit",
+                color=discord.Color.red()
+            )
+            await ctx.send(embed=embed)
+            return
+            
+        # Handle percentage-based deposits
+        if amount.lower() == "all":
+            amount = users[str(user.id)]["wallet"]
+        elif "%" in amount:
+            try:
+                percentage = int(amount.replace("%", ""))
+                if percentage <= 0 or percentage > 100:
+                    raise ValueError
+                amount = int(users[str(user.id)]["wallet"] * (percentage / 100))
+            except ValueError:
+                embed = discord.Embed(
+                    title="Error",
+                    description="Please enter a valid percentage between 1% and 100%",
+                    color=discord.Color.red()
+                )
+                await ctx.send(embed=embed)
+                return
+        else:
+            try:
+                amount = int(amount)
+            except ValueError:
+                embed = discord.Embed(
+                    title="Error",
+                    description="Please enter a valid number, percentage, or 'all'",
+                    color=discord.Color.red()
+                )
+                await ctx.send(embed=embed)
+                return
+        
+        if amount <= 0:
+            embed = discord.Embed(
+                title="Error",
+                description="Amount must be positive!",
+                color=discord.Color.red()
+            )
+            await ctx.send(embed=embed)
+            return
+            
+        if amount > users[str(user.id)]["wallet"]:
+            embed = discord.Embed(
+                title="Error",
+                description="You don't have that much money in your wallet!",
+                color=discord.Color.red()
+            )
+            await ctx.send(embed=embed)
+            return
+            
+        # Update balances
+        users[str(user.id)]["wallet"] -= amount
+        users[str(user.id)]["bank"] += amount
+        
+        # Save updated data
+        with open('data/bank.json', 'w') as f:
+            json.dump(users, f)
+            
+        # Create and send embed
+        embed = discord.Embed(
+            title="Deposit Successful",
+            description=f"You deposited **{amount} coins** into your bank!",
+            color=discord.Color.green()
+        )
+        
+        embed.add_field(
+            name="Wallet Balance", 
+            value=f"{users[str(user.id)]['wallet']} coins",
+            inline=True
+        )
+        
+        embed.add_field(
+            name="Bank Balance", 
+            value=f"{users[str(user.id)]['bank']} coins",
+            inline=True
+        )
+        
+        embed.set_footer(text=f"Requested by {ctx.author.name}", icon_url=ctx.author.avatar.url if ctx.author.avatar else ctx.author.default_avatar.url)
+        embed.timestamp = datetime.datetime.utcnow()
+        
+        await ctx.send(embed=embed)

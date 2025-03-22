@@ -1,1 +1,36 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Discord Bot specific
+token.txt
+config.json
 .env
+
+# Data files (might contain sensitive info)
+data/
+
+# IDE files
+.idea/
+.vscode/
+
+# Others
+.DS_Store
