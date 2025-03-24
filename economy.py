@@ -26,7 +26,7 @@ class EconomyCog(commands.Cog):
     @commands.command()
     async def bal(self, ctx):
         await self.balance(ctx)
-    
+
     @commands.command()
     @commands.cooldown(1, 86400, commands.BucketType.user)  # 1 day cooldown
     async def beg(self, ctx):
@@ -287,6 +287,10 @@ class EconomyCog(commands.Cog):
             )
             await ctx.send(embed=embed)
             return
+        
+        @commands.command()
+        async def dep(self, ctx, amount=None):
+            await self.deposit(ctx, amount)
             
         # Update balances
         users[str(user.id)]["wallet"] -= amount
