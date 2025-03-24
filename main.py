@@ -33,3 +33,13 @@ if __name__ == "__main__":
         client.run(token)
     else:
         print("Error: Bot token not found.")
+
+@client.event # command not found error handling
+async def on_command_error(ctx, error):
+    if isinstance(error, commands.CommandNotFound):
+        embed = discord.Embed(
+            title="Error",
+            description=f"Command `{ctx.invoked_with}` not found. Please use a valid command.",
+            color=discord.Color.red()
+        )
+        await ctx.send(embed=embed)
