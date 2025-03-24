@@ -18,7 +18,7 @@ class EconomyCog(commands.Cog):
         wallet_amt = users[str(ctx.author.id)]["wallet"]
         bank_amt = users[str(ctx.author.id)]["bank"]
 
-        em = discord.Embed(title=f"{ctx.author.name}'s balance", color=discord.Color.red())
+        em = discord.Embed(title=f"{ctx.author.name}'s balance", color=discord.Color.from_rgb(255, 255, 255))
         em.add_field(name="Wallet balance", value=wallet_amt)
         em.add_field(name="Bank balance", value=bank_amt)
         await ctx.send(embed=em)
@@ -26,6 +26,11 @@ class EconomyCog(commands.Cog):
     @commands.command()
     async def bal(self, ctx):
         await self.balance(ctx)
+
+    @commands.command()
+    async def dep(self, ctx, amount=None):
+        await self.deposit(ctx, amount)
+
 
     @commands.command()
     @commands.cooldown(1, 86400, commands.BucketType.user)  # 1 day cooldown
@@ -287,11 +292,7 @@ class EconomyCog(commands.Cog):
             )
             await ctx.send(embed=embed)
             return
-        
-    @commands.command()
-    async def dep(self, ctx, amount=None):
-        await self.deposit(ctx, amount)
-            
+                    
         # Update balances
         users[str(user.id)]["wallet"] -= amount
         users[str(user.id)]["bank"] += amount
