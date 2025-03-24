@@ -32,4 +32,4 @@ if __name__ == "__main__":
         asyncio.run(setup())
         client.run(token)
     else:
-        print("Error: Bot token not found. Please set the bot_token in your .env file.")
+        print("Error: Bot token not found.")
