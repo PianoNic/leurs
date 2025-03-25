@@ -32,6 +32,18 @@ class OtherCog(commands.Cog):
         await ctx.send(file=file)
     
     @commands.command()
+    async def lyric(self, ctx):
+        random_num_lyric = random.randint(1, 7)
+        file_path = f"data/{random_num_lyric}.txt"
+
+        if os.path.exists(file_path):
+            with open(file_path, 'r') as file:
+                content = file.read()
+            await ctx.send(content)
+        else:
+            await ctx.send("Couldn't find the lyric file")
+
+    @commands.command()
     async def opl(self, ctx):
         await ctx.send("https://habenwirmorgenopl.info (might be down)")
     
