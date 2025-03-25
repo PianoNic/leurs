@@ -15,11 +15,6 @@ intents.message_content = True
 
 client = commands.Bot(command_prefix='-', intents=intents)
 
-def get_random_lyric():
-    with open('lyrics.txt', 'r') as file:
-        lyrics = file.readlines()
-    return random.choice(lyrics).strip()
-
 @client.check
 async def check_channel(ctx):
     if ctx.channel.id != 1172476424704237589:
@@ -64,11 +59,6 @@ async def global_check(ctx):
 @client.event
 async def on_ready():
     print('Bot is ready.')
-
-@client.command()
-async def lyric(ctx):
-    random_lyric = get_random_lyric()
-    await ctx.send(random_lyric)
 
 async def setup():
     await client.add_cog(EconomyCog(client))
