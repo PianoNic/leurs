@@ -8,6 +8,7 @@ from economy import EconomyCog
 from gambling import GamblingCog
 from other import OtherCog
 from jobs import JobMarketCog
+from levels import LevelsCog
 
 os.chdir(os.path.dirname(os.path.abspath(__file__)))
 
@@ -58,6 +59,7 @@ async def setup():
     await client.add_cog(GamblingCog(client))
     await client.add_cog(OtherCog(client))
     await client.add_cog(JobMarketCog(client))
+    await client.add_cog(LevelsCog(client))
 
 if __name__ == "__main__":
     load_dotenv()
