@@ -31,3 +31,6 @@ config.json
 
 # Others
 .DS_Store
+
+# git ignore sensitive data
+/data/bank.json
