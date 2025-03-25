@@ -191,7 +191,6 @@ class EconomyCog(commands.Cog):
     async def wit(self, ctx, amount=None):
         await self.withdraw(ctx, amount)
 
-
     @commands.command()
     @commands.cooldown(1, 86400, commands.BucketType.user)  # 1 day cooldown
     async def beg(self, ctx):
@@ -587,3 +586,60 @@ class EconomyCog(commands.Cog):
         
         # Send embed with view
         view.message = await ctx.send(embed=embed, view=view)
+
+    async def add_balance(self, user_id, amount):
+        """Add balance to a user's account (admin command)"""
+        users = await self.get_bank_data()
+        
+        # Convert user_id to string for consistency
+        user_id = str(user_id)
+        
+        # Create account if user doesn't exist
+        if user_id not in users:
+            users[user_id] = {}
+            users[user_id]["wallet"] = 0
+            users[user_id]["bank"] = 0
+        
+        # Add amount to wallet
+        users[user_id]["wallet"] += amount
+        
+        # Save updated data
+        with open('data/bank.json', 'w') as f:
+            json.dump(users, f)
+            
+        return users[user_id]["wallet"]
+    
+    async def remove_balance(self, user_id, amount):
+        """Remove balance from a user's account (admin command)"""
+        users = await self.get_bank_data()
+        
+        # Convert user_id to string for consistency
+        user_id = str(user_id)
+        
+        # Create account if user doesn't exist
+        if user_id not in users:
+            users[user_id] = {}
+            users[user_id]["wallet"] = 0
+            users[user_id]["bank"] = 0
+            return False  # Can't remove from empty account
+        
+        # Check if user has enough in wallet
+        if users[user_id]["wallet"] >= amount:
+            users[user_id]["wallet"] -= amount
+        # If not enough in wallet, check combined balance
+        elif (users[user_id]["wallet"] + users[user_id]["bank"]) >= amount:
+            # Take what we can from wallet
+            remainder = amount - users[user_id]["wallet"]
+            users[user_id]["wallet"] = 0
+            # Take the rest from bank
+            users[user_id]["bank"] -= remainder
+        else:
+            # Not enough money, set to zero
+            users[user_id]["wallet"] = 0
+            users[user_id]["bank"] = 0
+        
+        # Save updated data
+        with open('data/bank.json', 'w') as f:
+            json.dump(users, f)
+            
+        return True
