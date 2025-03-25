@@ -15,14 +15,6 @@ intents.message_content = True
 
 client = commands.Bot(command_prefix='-', intents=intents)
 
-@client.check
-async def check_channel(ctx):
-    if ctx.channel.id != 1172476424704237589:
-        await ctx.message.delete()
-        await ctx.send("Please use the bot in the designated bot channel.", delete_after=1)
-        return False
-    return True
-
 @client.event
 async def on_command_error(ctx, error):
     if ctx.channel.id != 1172476424704237589:
