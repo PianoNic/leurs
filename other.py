@@ -58,3 +58,8 @@ class OtherCog(commands.Cog):
     @commands.command()
     async def hwmo(self, ctx):
         await ctx.send("https://habenwirmorgenopl.info (might be down)")
+
+    @commands.command()
+    async def hi(self, ctx):
+        await ctx.send("Hi I'm coffee!")
+    
