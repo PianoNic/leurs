@@ -20,7 +20,7 @@ class OtherCog(commands.Cog):
         embed = discord.Embed(
             title="Leurs: Discord Balance Bot",
             description="A Discord bot for managing balances and other utilities.",
-            color=discord.Color.white()
+            color=0xFFFFFF
         )
         
         embed.add_field(name="GitHub Repository", value="https://github.com/IM23d/discord-balance-bot", inline=False)
@@ -32,6 +32,7 @@ class OtherCog(commands.Cog):
         embed.set_footer(text="Leurs: Discord Balance Bot")
         
         await ctx.send(embed=embed)
+        
 
     @commands.command()
     async def david(self, ctx):
