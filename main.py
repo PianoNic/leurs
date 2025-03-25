@@ -48,6 +48,19 @@ async def on_command_error(ctx, error):
         )
         await ctx.send(embed=embed)
 
+@client.check
+async def global_check(ctx):
+    if ctx.channel.id != 1172476424704237589:
+        embed = discord.Embed(
+            title="Wrong Channel",
+            description="Please use the bot in the designated bot channel.",
+            color=discord.Color.red()
+        )
+        await ctx.message.delete()
+        await ctx.send(embed=embed, delete_after=1.5)
+        return False
+    return True
+
 @client.event
 async def on_ready():
     print('Bot is ready.')
