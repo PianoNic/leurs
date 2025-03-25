@@ -2,6 +2,7 @@ import discord
 from discord.ext import commands
 import os
 from dotenv import load_dotenv
+import random
 
 from economy import EconomyCog
 from gambling import GamblingCog
@@ -13,6 +14,11 @@ intents = discord.Intents.default()
 intents.message_content = True
 
 client = commands.Bot(command_prefix='-', intents=intents)
+
+def get_random_lyric():
+    with open('lyrics.txt', 'r') as file:
+        lyrics = file.readlines()
+    return random.choice(lyrics).strip()
 
 @client.check
 async def check_channel(ctx):
@@ -35,6 +41,11 @@ async def on_command_error(ctx, error):
 @client.event
 async def on_ready():
     print('Bot is ready.')
+
+@client.command()
+async def lyric(ctx):
+    random_lyric = get_random_lyric()
+    await ctx.send(random_lyric)
 
 async def setup():
     await client.add_cog(EconomyCog(client))
