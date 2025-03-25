@@ -16,6 +16,23 @@ class OtherCog(commands.Cog):
         await ctx.send("ich habe mal david in migros getroffen und ein foto mit david gemacht. das hat mich glücklich gemacht. dann hatten wir französisch...")
     
     @commands.command()
+    async def info(self, ctx):
+        embed = discord.Embed(
+            title="Discord Balance Bot",
+            description="A Discord bot for managing balances and other utilities.",
+            color=discord.Color.white()
+        )
+        
+        embed.add_field(name="GitHub Repository", value="https://github.com/IM23d/discord-balance-bot", inline=False)
+        embed.add_field(name="Developers", value="@bettercallmilan, @FlorianRuby & @seakyy", inline=True)
+        embed.add_field(name="Version", value="1.0.0", inline=True)
+        embed.add_field(name="Commands", value="Use `-help` to see all available commands", inline=False)
+        
+        embed.set_footer(text="Thanks for using Discord Balance Bot!")
+        
+        await ctx.send(embed=embed)
+
+    @commands.command()
     async def david(self, ctx):
         random_num_david = random.randint(1, 20)
         jpeg_path = f"images/david/{random_num_david}.jpeg"
