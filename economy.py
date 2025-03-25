@@ -31,6 +31,10 @@ class EconomyCog(commands.Cog):
     async def dep(self, ctx, amount=None):
         await self.deposit(ctx, amount)
 
+    @commands.command()
+    async def wit(self, ctx, amount=None):
+        await self.withdraw(ctx, amount)
+
 
     @commands.command()
     @commands.cooldown(1, 86400, commands.BucketType.user)  # 1 day cooldown

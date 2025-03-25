@@ -34,3 +34,4 @@ config.json
 
 # git ignore sensitive data
 /data/bank.json
+/data/jobs.json
