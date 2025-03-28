@@ -19,8 +19,7 @@ Below is a list of available commands, grouped by their respective categories.
   Kicks a member from the server.
   
 - **`-removebalance <user> <amount>`**  
-  Removes a specified amount from a user's balance
-
+  Removes a specified amount from a user's balance.
 ### EconomyCog
 
 - **`-bal`**  
