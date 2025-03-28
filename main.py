@@ -12,6 +12,7 @@ from levels import LevelsCog
 from admin import AdminCog
 from lastfm import LastFMCog
 
+
 os.chdir(os.path.dirname(os.path.abspath(__file__)))
 
 intents = discord.Intents.default()
