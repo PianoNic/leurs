@@ -11,7 +11,7 @@ class LevelsCog(commands.Cog):
         self.client = client
         # XP settings
         self.base_xp = 15  # Base XP per message
-        self.xp_per_level = 7500  # XP needed for each level (500 messages * ~15 XP = 7500)
+        self.xp_per_level = 7500  # XP needed for each level (500 messages = one level)
         self.message_count = {}  # Track messages per minute
         self.window_start = {}  # Track when the 60-second window started
         
