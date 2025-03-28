@@ -36,3 +36,4 @@ config.json
 /data/bank.json
 /data/jobs.json
 /data/levels.json
+/data/lastfm.json
