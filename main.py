@@ -9,6 +9,7 @@ from gambling import GamblingCog
 from other import OtherCog
 from jobs import JobMarketCog
 from levels import LevelsCog
+from admin import AdminCog
 from lastfm import LastFMCog
 
 os.chdir(os.path.dirname(os.path.abspath(__file__)))
@@ -70,6 +71,7 @@ async def setup():
         await client.add_cog(OtherCog(client))
         await client.add_cog(JobMarketCog(client))
         await client.add_cog(LevelsCog(client))
+        await client.add_cog(AdminCog(client))
         await client.add_cog(LastFMCog(client))
         print("All cogs loaded successfully")
     except Exception as e:
