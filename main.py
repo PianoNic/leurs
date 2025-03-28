@@ -9,6 +9,7 @@ from gambling import GamblingCog
 from other import OtherCog
 from jobs import JobMarketCog
 from levels import LevelsCog
+from lastfm import LastFMCog
 
 os.chdir(os.path.dirname(os.path.abspath(__file__)))
 
@@ -36,6 +37,13 @@ async def on_command_error(ctx, error):
             color=discord.Color.red()
         )
         await ctx.send(embed=embed)
+    else:
+        embed = discord.Embed(
+            title="Error",
+            description=f"An error occurred: {str(error)}",
+            color=discord.Color.red()
+        )
+        await ctx.send(embed=embed)
 
 @client.check
 async def global_check(ctx):
@@ -53,13 +61,19 @@ async def global_check(ctx):
 @client.event
 async def on_ready():
     print('Bot is ready.')
+    print(f'Logged in as {client.user.name}')
 
 async def setup():
-    await client.add_cog(EconomyCog(client))
-    await client.add_cog(GamblingCog(client))
-    await client.add_cog(OtherCog(client))
-    await client.add_cog(JobMarketCog(client))
-    await client.add_cog(LevelsCog(client))
+    try:
+        await client.add_cog(EconomyCog(client))
+        await client.add_cog(GamblingCog(client))
+        await client.add_cog(OtherCog(client))
+        await client.add_cog(JobMarketCog(client))
+        await client.add_cog(LevelsCog(client))
+        await client.add_cog(LastFMCog(client))
+        print("All cogs loaded successfully")
+    except Exception as e:
+        print(f"Error loading cogs: {e}")
 
 if __name__ == "__main__":
     load_dotenv()
