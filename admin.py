@@ -71,13 +71,11 @@ class AdminCog(commands.Cog):
         )
         await ctx.send(embed=embed)
         
-        # Instead of creating a task, just call the schedule_unmute directly
         asyncio.create_task(self.schedule_unmute(ctx, member, muted_role, duration))
 
     async def schedule_unmute(self, ctx, member, muted_role, duration):
         """Schedule the unmute after the specified duration."""
         try:
-            # Parse the duration properly
             if duration.endswith('s'):
                 duration_seconds = int(duration[:-1])
             elif duration.endswith('m'):
@@ -87,19 +85,15 @@ class AdminCog(commands.Cog):
             elif duration.endswith('d'):
                 duration_seconds = int(duration[:-1]) * 86400
             else:
-                # Default to minutes if no suffix specified
                 try:
                     duration_seconds = int(duration) * 60
                 except ValueError:
                     await ctx.send(f"Invalid duration format: {duration}. Use formats like '30s', '10m', '1h', or '1d'.")
                     return
             
-            # Wait for the specified duration
             await asyncio.sleep(duration_seconds)
             
-            # Attempt to unmute the user
             try:
-                # Try to fetch the member again to ensure we have current data
                 try:
                     member = await ctx.guild.fetch_member(member.id)
                 except discord.NotFound:
