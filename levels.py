@@ -14,6 +14,9 @@ class LevelsCog(commands.Cog):
         self.xp_per_level = 7500  # XP needed for each level (500 messages = one level)
         self.message_count = {}  # Track messages per minute
         self.window_start = {}  # Track when the 60-second window started
+        # Voice tracking
+        self.voice_time = {}  # Track current voice sessions
+        self.voice_start = {}  # Track when users joined VC
         
     @commands.Cog.listener()
     async def on_message(self, message):
@@ -23,6 +26,95 @@ class LevelsCog(commands.Cog):
             
         # Handle XP gain
         await self.add_xp(message.author, message.channel)
+        
+    async def update_voice_time(self, member):
+        """Update voice time for users currently in voice chat"""
+        if not member.voice or member.voice.afk:
+            return
+            
+        user_id = str(member.id)
+        current_time = datetime.datetime.now().timestamp()
+        
+        # If user is in voice but not being tracked, start tracking them
+        if user_id not in self.voice_start and member.voice and not member.voice.afk:
+            self.voice_start[user_id] = current_time
+            self.voice_time[user_id] = 0
+            # Create user entry in voice data
+            await self.check_voice_user(member)
+            return
+            
+        # If user is being tracked, update their time
+        if user_id in self.voice_start:
+            time_spent = current_time - self.voice_start[user_id]
+            
+            # Update voice data
+            voice_users = await self.get_voice_data()
+            await self.check_voice_user(member)  # Ensure user exists in database
+            
+            # Add time spent to total
+            voice_users[user_id]["voice_time"] = voice_users[user_id].get("voice_time", 0) + time_spent
+            
+            # Save voice data
+            with open('data/voice_levels.json', 'w') as f:
+                json.dump(voice_users, f)
+                
+            # Update tracking with new start time
+            self.voice_start[user_id] = current_time
+        
+    @commands.Cog.listener()
+    async def on_voice_state_update(self, member, before, after):
+        user_id = str(member.id)
+        current_time = datetime.datetime.now().timestamp()
+        
+        # Ignore AFK channel
+        if after.channel and after.channel.afk:
+            return
+            
+        # User joined a voice channel
+        if not before.channel and after.channel:
+            self.voice_start[user_id] = current_time
+            self.voice_time[user_id] = 0
+            
+        # User left a voice channel
+        elif before.channel and not after.channel:
+            if user_id in self.voice_start:
+                # Calculate time spent
+                time_spent = current_time - self.voice_start[user_id]
+                
+                # Update voice data
+                voice_users = await self.get_voice_data()
+                await self.check_voice_user(member)
+                
+                # Add time spent to total
+                voice_users[user_id]["voice_time"] = voice_users[user_id].get("voice_time", 0) + time_spent
+                
+                # Save voice data
+                with open('data/voice_levels.json', 'w') as f:
+                    json.dump(voice_users, f)
+                    
+                # Clean up tracking
+                del self.voice_start[user_id]
+                del self.voice_time[user_id]
+                
+        # User switched channels
+        elif before.channel and after.channel and before.channel != after.channel:
+            # If moving to AFK, count it as leaving
+            if after.channel.afk:
+                if user_id in self.voice_start:
+                    time_spent = current_time - self.voice_start[user_id]
+                    voice_users = await self.get_voice_data()
+                    await self.check_voice_user(member)
+                    
+                    voice_users[user_id]["voice_time"] = voice_users[user_id].get("voice_time", 0) + time_spent
+                    
+                    with open('data/voice_levels.json', 'w') as f:
+                        json.dump(voice_users, f)
+                    del self.voice_start[user_id]
+                    del self.voice_time[user_id]
+            # If moving from AFK to normal channel, count as joining
+            elif before.channel.afk and not after.channel.afk:
+                self.voice_start[user_id] = current_time
+                self.voice_time[user_id] = 0
         
     async def add_xp(self, user, channel):
         # Anti-spam mechanism (max 60 messages per minute)
@@ -91,16 +183,24 @@ class LevelsCog(commands.Cog):
         if member is None:
             member = ctx.author
             
+        # Update voice time if user is in voice
+        await self.update_voice_time(member)
+            
         await self.check_user(member)
+        await self.check_voice_user(member)
         users = await self.get_levels_data()
+        voice_users = await self.get_voice_data()
         user_id = str(member.id)
         
-        # Get user data
+        # Get message data
         xp = users[user_id]["xp"]
         level = users[user_id]["level"]
         total_messages = users[user_id]["total_messages"]
         
-        # Calculate progress to next level
+        # Get voice data
+        voice_time = voice_users[user_id]["voice_time"]
+        
+        # Calculate message progress to next level
         xp_for_current_level = level * self.xp_per_level
         xp_for_next_level = (level + 1) * self.xp_per_level
         current_level_xp = xp - xp_for_current_level
@@ -110,16 +210,25 @@ class LevelsCog(commands.Cog):
         # Create progress bar
         progress_bar = self.create_progress_bar(percentage)
         
+        # Format voice time
+        hours = int(voice_time / 3600)
+        minutes = int((voice_time % 3600) / 60)
+        voice_time_str = f"{hours}h {minutes}m"
+        
         # Create embed
         embed = discord.Embed(
-            title=f"{member.name}'s Level Stats",
+            title=f"{member.name}'s Stats",
             color=discord.Color.blue()
         )
         
+        # Message stats
         embed.add_field(name="Level", value=f"**{level}**", inline=True)
         embed.add_field(name="Total XP", value=f"**{xp}**", inline=True)
         embed.add_field(name="Messages", value=f"**{total_messages}**", inline=True)
         embed.add_field(name=f"Progress to Level {level+1}", value=f"{progress_bar} **{percentage}%**\n{current_level_xp}/{needed_for_next_level} XP", inline=False)
+        
+        # Voice stats
+        embed.add_field(name="Time in Voice", value=f"**{voice_time_str}**", inline=True)
         
         embed.set_thumbnail(url=member.avatar.url if member.avatar else member.default_avatar.url)
         embed.set_footer(text=f"Requested by {ctx.author.name}", icon_url=ctx.author.avatar.url if ctx.author.avatar else ctx.author.default_avatar.url)
@@ -135,7 +244,7 @@ class LevelsCog(commands.Cog):
         
     @commands.command(aliases=["lvltop"])
     async def levels(self, ctx, page: int = 1):
-        """Show the server's level leaderboard"""
+        """Show the server's message level leaderboard"""
         # Get all user data from the database file directly
         users = await self.get_levels_data()
         
@@ -163,7 +272,6 @@ class LevelsCog(commands.Cog):
                 # Skip problematic entries
                 continue
         
-        # Now sort and display
         # Sort by level first, then by XP (both descending)
         user_list.sort(key=lambda x: (x["level"], x["xp"]), reverse=True)
         
@@ -178,8 +286,8 @@ class LevelsCog(commands.Cog):
         
         # Create embed
         embed = discord.Embed(
-            title=f"🏆 Level Leaderboard",
-            description=f"Top members ranked by level and XP.",
+            title=f"🏆 Message Level Leaderboard",
+            description=f"Top members ranked by message level and XP.",
             color=discord.Color.gold()
         )
         
@@ -198,17 +306,136 @@ class LevelsCog(commands.Cog):
                 # Get appropriate emoji based on rank
                 prefix = rank_emoji.get(position, f"{idx}.")
                 
-                # Get XP progress percentage to next level
-                level = user_data["level"]
-                xp = user_data["xp"]
-                xp_for_current_level = level * self.xp_per_level
-                xp_for_next_level = (level + 1) * self.xp_per_level
-                current_level_xp = xp - xp_for_current_level
-                needed_for_next_level = xp_for_next_level - xp_for_current_level
-                percentage = min(100, max(0, int((current_level_xp / needed_for_next_level) * 100)))
+                # Get the name and icon url
+                if member:
+                    name = member.name
+                    icon_url = member.avatar.url if member.avatar else member.default_avatar.url
+                else:
+                    # Try to fetch user info from Discord
+                    try:
+                        user = await self.client.fetch_user(int(user_id))
+                        name = user.name
+                        icon_url = user.avatar.url if user.avatar else user.default_avatar.url
+                    except:
+                        # If all else fails, use a generic name
+                        name = f"User-{user_id[-4:]}"
+                        icon_url = None
                 
-                # Create a mini progress bar (5 spaces)
-                progress = self.create_progress_bar(percentage, 5)
+                # Create embed field
+                field_name = f"{prefix} {name}"
+                field_value = f"Level: **{user_data['level']}** | XP: **{user_data['xp']}**\nMessages: **{user_data['total_messages']}**"
+                
+                embed.add_field(name=field_name, value=field_value, inline=False)
+                
+                # Show first-place user as thumbnail
+                if position == 0 and icon_url:
+                    embed.set_thumbnail(url=icon_url)
+        
+        embed.set_footer(text=f"Page {page}/{total_pages} • Requested by {ctx.author.name}", 
+                         icon_url=ctx.author.avatar.url if ctx.author.avatar else ctx.author.default_avatar.url)
+        embed.timestamp = datetime.datetime.utcnow()
+        
+        # Create view with pagination buttons
+        view = LevelLeaderboardView(self, ctx, page, total_pages)
+        
+        # Send embed with view
+        view.message = await ctx.send(embed=embed, view=view)
+
+    @commands.command(aliases=["voicetop", "vtop"])
+    async def voicelevels(self, ctx, page: int = 1):
+        """Show the server's voice time leaderboard"""
+        # Update voice time for all users in voice
+        for member in ctx.guild.members:
+            if member.voice and not member.voice.afk:
+                try:
+                    # If user is in voice but not being tracked, start tracking them
+                    user_id = str(member.id)
+                    if user_id not in self.voice_start:
+                        current_time = datetime.datetime.now().timestamp()
+                        self.voice_start[user_id] = current_time
+                        self.voice_time[user_id] = 0
+                        # Create user entry in voice data
+                        await self.check_voice_user(member)
+                    # Update their current time
+                    await self.update_voice_time(member)
+                except Exception as e:
+                    print(f"Error updating voice time for {member.name}: {e}")
+                    continue
+        
+        # Get all user data from the database file directly
+        users = await self.get_voice_data()
+        
+        # Create list from all users in the database
+        user_list = []
+        
+        # First, add all existing database entries
+        for user_id, user_data in users.items():
+            try:
+                # Try to get the member object, fetch from Discord if needed
+                member = ctx.guild.get_member(int(user_id))
+                
+                # Skip if member not found in guild
+                if not member:
+                    continue
+                
+                # Format voice time
+                voice_time = user_data.get("voice_time", 0)
+                
+                # If user is currently in voice, add their current session time
+                if member and member.voice and not member.voice.afk and user_id in self.voice_start:
+                    current_time = datetime.datetime.now().timestamp()
+                    current_session = current_time - self.voice_start[user_id]
+                    voice_time += current_session
+                
+                hours = int(voice_time / 3600)
+                minutes = int((voice_time % 3600) / 60)
+                voice_time_str = f"{hours}h {minutes}m"
+                
+                # Get user data
+                user_entry = {
+                    "id": user_id,
+                    "voice_time": voice_time,
+                    "voice_time_str": voice_time_str,
+                    "member": member
+                }
+                user_list.append(user_entry)
+            except Exception as e:
+                print(f"Error processing user {user_id}: {e}")
+                continue
+        
+        # Sort by voice time (descending)
+        user_list.sort(key=lambda x: x["voice_time"], reverse=True)
+        
+        # Paginate results (10 per page)
+        total_pages = max(1, math.ceil(len(user_list) / 10))
+        
+        # Ensure page is within valid range
+        page = max(1, min(page, total_pages))
+        
+        start_idx = (page - 1) * 10
+        end_idx = min(start_idx + 10, len(user_list))
+        
+        # Create embed
+        embed = discord.Embed(
+            title=f"🎤 Voice Time Leaderboard",
+            description=f"Top members ranked by time spent in voice channels.",
+            color=discord.Color.purple()
+        )
+        
+        # Add leaderboard entries
+        if not user_list:
+            embed.description = "No users have spent time in voice channels yet!"
+        else:
+            # Get rank emojis for top 3
+            rank_emoji = {0: "🥇", 1: "🥈", 2: "🥉"}
+            
+            for idx, user_data in enumerate(user_list[start_idx:end_idx], start=start_idx + 1):
+                member = user_data["member"]
+                user_id = user_data["id"]
+                position = idx - 1 + start_idx  # Zero-based position
+                
+                # Get appropriate emoji based on rank
+                prefix = rank_emoji.get(position, f"{idx}.")
                 
                 # Get the name and icon url
                 if member:
@@ -227,7 +454,7 @@ class LevelsCog(commands.Cog):
                 
                 # Create embed field
                 field_name = f"{prefix} {name}"
-                field_value = f"Level: **{level}** | XP: **{xp}** | Messages: **{user_data['total_messages']}**\n{progress} **{percentage}%** to Level {level+1}"
+                field_value = f"Time in Voice: **{user_data['voice_time_str']}**"
                 
                 embed.add_field(name=field_name, value=field_value, inline=False)
                 
@@ -288,6 +515,47 @@ class LevelsCog(commands.Cog):
                 json.dump(users, f)
                 
         return users
+
+    async def get_voice_data(self):
+        """Get voice level data from JSON file"""
+        if not os.path.exists('data'):
+            os.makedirs('data')
+        
+        if not os.path.exists('data/voice_levels.json'):
+            with open('data/voice_levels.json', 'w') as f:
+                json.dump({}, f)
+
+        with open('data/voice_levels.json', 'r') as f:
+            content = f.read().strip()
+            if not content:
+                users = {}
+            else:
+                try:
+                    users = json.loads(content)
+                except json.JSONDecodeError:
+                    users = {}
+            
+        if not content:
+            with open('data/voice_levels.json', 'w') as f:
+                json.dump(users, f)
+                
+        return users
+
+    async def check_voice_user(self, user):
+        """Check if user exists in voice database, create if not"""
+        users = await self.get_voice_data()
+        user_id = str(user.id)
+        
+        if user_id not in users:
+            users[user_id] = {
+                "voice_time": 0
+            }
+            
+            # Save updated data
+            with open('data/voice_levels.json', 'w') as f:
+                json.dump(users, f)
+                
+        return True
 
 class LevelLeaderboardView(discord.ui.View):
     def __init__(self, cog, ctx, page, total_pages):
@@ -351,11 +619,18 @@ class LevelLeaderboardView(discord.ui.View):
                 # Include all users in the database
                 if 'xp' in user_data:
                     # Get user data
+                    voice_time = user_data.get("voice_time", 0)
+                    hours = int(voice_time / 3600)
+                    minutes = int((voice_time % 3600) / 60)
+                    voice_time_str = f"{hours}h {minutes}m"
+                    
                     user_entry = {
                         "id": user_id,
                         "xp": user_data["xp"],
                         "level": user_data["level"],
                         "total_messages": user_data["total_messages"],
+                        "voice_time": voice_time,
+                        "voice_time_str": voice_time_str,
                         "member": member
                     }
                     user_list.append(user_entry)
@@ -397,18 +672,6 @@ class LevelLeaderboardView(discord.ui.View):
                 # Get appropriate emoji based on rank
                 prefix = rank_emoji.get(position, f"{idx}.")
                 
-                # Get XP progress percentage to next level
-                level = user_data["level"]
-                xp = user_data["xp"]
-                xp_for_current_level = level * self.cog.xp_per_level
-                xp_for_next_level = (level + 1) * self.cog.xp_per_level
-                current_level_xp = xp - xp_for_current_level
-                needed_for_next_level = xp_for_next_level - xp_for_current_level
-                percentage = min(100, max(0, int((current_level_xp / needed_for_next_level) * 100)))
-                
-                # Create a mini progress bar (5 spaces)
-                progress = self.cog.create_progress_bar(percentage, 5)
-                
                 # Get the name and icon url
                 if member:
                     name = member.name
@@ -426,7 +689,7 @@ class LevelLeaderboardView(discord.ui.View):
                 
                 # Create embed field
                 field_name = f"{prefix} {name}"
-                field_value = f"Level: **{level}** | XP: **{xp}** | Messages: **{user_data['total_messages']}**\n{progress} **{percentage}%** to Level {level+1}"
+                field_value = f"Level: **{user_data['level']}** | XP: **{user_data['xp']}**\nMessages: **{user_data['total_messages']}** | Voice: **{user_data['voice_time_str']}**"
                 
                 embed.add_field(name=field_name, value=field_value, inline=False)
                 
