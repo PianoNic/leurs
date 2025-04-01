@@ -37,3 +37,6 @@ config.json
 /data/jobs.json
 /data/levels.json
 /data/lastfm.json
+/data/voice_levels.json
+
+/data
