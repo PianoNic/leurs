@@ -1,57 +1,45 @@
 import discord
 from discord.ext import commands
 import random
-import json
-import os
 import datetime
+from database import db
 
 class GamblingCog(commands.Cog):
     def __init__(self, client):
         self.client = client
     
-    async def get_bank_data(self):
-        if not os.path.exists('data'):
-            os.makedirs('data')
-        
-        if not os.path.exists('data/bank.json'):
-            with open('data/bank.json', 'w') as f:
-                json.dump({}, f)
-
-        with open('data/bank.json', 'r') as f:
-            content = f.read().strip()
-            if not content:
-                users = {}
-            else:
-                try:
-                    users = json.loads(content)
-                except json.JSONDecodeError:
-                    users = {}
-            
-        if not content:
-            with open('data/bank.json', 'w') as f:
-                json.dump(users, f)
-                
-        return users
-    
     async def open_account(self, user):
-        users = await self.get_bank_data()
-
-        if str(user.id) in users:
+        """Create a bank account for a user if they don't have one."""
+        user_id = user.id
+        
+        # Check if user already has an account
+        account = await self.get_account(user_id)
+        if account:
             return False
-        else:
-            users[str(user.id)] = {}
-            users[str(user.id)]["wallet"] = 0
-            users[str(user.id)]["bank"] = 0
-
-        with open('data/bank.json', 'w') as f:
-            json.dump(users, f)
+        
+        # Create new account with default values
+        await db.execute('''
+            INSERT INTO bank_accounts (user_id, wallet, bank) 
+            VALUES ($1, $2, $3)
+            ON CONFLICT (user_id) DO NOTHING
+        ''', user_id, 50, 0)
+        
         return True
+    
+    async def get_account(self, user_id):
+        """Get a user's bank account data."""
+        account = await db.fetchrow('''
+            SELECT * FROM bank_accounts WHERE user_id = $1
+        ''', user_id)
+        
+        if account:
+            return dict(account)
+        return None
     
     @commands.command()
     async def gamble(self, ctx, amount=None):
         await self.open_account(ctx.author)
-        users = await self.get_bank_data()
-        user = ctx.author
+        account = await self.get_account(ctx.author.id)
         
         if amount is None:
             embed = discord.Embed(
@@ -63,13 +51,13 @@ class GamblingCog(commands.Cog):
             return
             
         if amount == "all":
-            amount = users[str(user.id)]["wallet"]
+            amount = account["wallet"]
         elif isinstance(amount, str) and "%" in amount:
             try:
                 percentage = int(amount.replace("%", ""))
                 if percentage <= 0 or percentage > 100:
                     raise ValueError
-                amount = int(users[str(user.id)]["wallet"] * (percentage / 100))
+                amount = int(account["wallet"] * (percentage / 100))
             except ValueError:
                 embed = discord.Embed(
                     title="Error",
@@ -90,7 +78,7 @@ class GamblingCog(commands.Cog):
                 await ctx.send(embed=embed)
                 return
         
-        wallet_amt = users[str(user.id)]["wallet"]
+        wallet_amt = account["wallet"]
         
         if amount <= 0:
             embed = discord.Embed(
@@ -114,23 +102,33 @@ class GamblingCog(commands.Cog):
         result = "heads" if random.randint(1, 2) == 1 else "tails"
         win = result == "heads"  # Win on heads, lose on tails
         
-        # Update balance
+        # Update balance in database
         if win:
-            users[str(user.id)]["wallet"] += amount
-            new_balance = users[str(user.id)]["wallet"]
+            await db.execute('''
+                UPDATE bank_accounts 
+                SET wallet = wallet + $1
+                WHERE user_id = $2
+            ''', amount, ctx.author.id)
+            
             color = discord.Color.green()
             title = "You Won!"
             description = f"The coin landed on **{result}**! You won **{amount} coins**!"
         else:
-            users[str(user.id)]["wallet"] -= amount
-            new_balance = users[str(user.id)]["wallet"]
+            await db.execute('''
+                UPDATE bank_accounts 
+                SET wallet = wallet - $1
+                WHERE user_id = $2
+            ''', amount, ctx.author.id)
+            
             color = discord.Color.red()
             title = "You Lost!"
             description = f"The coin landed on **{result}**! You lost **{amount} coins**!"
         
-        # Save updated data
-        with open('data/bank.json', 'w') as f:
-            json.dump(users, f)
+        # Get updated balance
+        new_balance = await db.fetchval('''
+            SELECT wallet FROM bank_accounts 
+            WHERE user_id = $1
+        ''', ctx.author.id)
         
         # Create and send embed
         embed = discord.Embed(
@@ -145,8 +143,10 @@ class GamblingCog(commands.Cog):
             inline=False
         )
         
-        # Remove thumbnail images and just use color coding
         embed.set_footer(text=f"Requested by {ctx.author.name}", icon_url=ctx.author.avatar.url if ctx.author.avatar else ctx.author.default_avatar.url)
         embed.timestamp = datetime.datetime.utcnow()
         
         await ctx.send(embed=embed)
+
+async def setup(client):
+    await client.add_cog(GamblingCog(client))
