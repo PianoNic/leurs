@@ -1,9 +1,10 @@
 import discord
 from discord.ext import commands
+import json
+import os
 import random
 import datetime
 from typing import Dict, List
-from database import db
 
 class JobMarketView(discord.ui.View):
     def __init__(self, cog, ctx, page, total_pages):
@@ -52,12 +53,9 @@ class JobMarketView(discord.ui.View):
             pass
 
     async def update_page(self, new_page: int):
-        # Get all available jobs
-        all_jobs = await self.cog.get_all_jobs()
-        
         # Calculate total pages
         jobs_per_page = 3
-        total_jobs = len(all_jobs)
+        total_jobs = len(self.cog.jobs)
         total_pages = (total_jobs + jobs_per_page - 1) // jobs_per_page
         
         # Ensure page is within valid range
@@ -66,10 +64,10 @@ class JobMarketView(discord.ui.View):
         # Get jobs for current page
         start_idx = (new_page - 1) * jobs_per_page
         end_idx = min(start_idx + jobs_per_page, total_jobs)
-        current_jobs = all_jobs[start_idx:end_idx]
+        current_jobs = list(self.cog.jobs.items())[start_idx:end_idx]
         
         user_id = str(self.ctx.author.id)
-        user_jobs = await self.cog.get_user_jobs(user_id)
+        user_jobs = self.cog.get_user_jobs(user_id)
         
         embed = discord.Embed(
             title="📋 Job Market",
@@ -77,14 +75,13 @@ class JobMarketView(discord.ui.View):
             color=discord.Color.blue()
         )
         
-        for job in current_jobs:
-            job_name = job['name']
+        for job_name, job_info in current_jobs:
             status = "✅ Unlocked" if job_name in user_jobs else "🔒 Locked"
-            value = f"Base Pay: {job['base_pay']} coins\n"
-            value += f"Bonus Chance: {float(job['bonus_chance'])*100}%\n"
-            value += f"Bonus Amount: {job['bonus_amount']} coins"
+            value = f"Base Pay: {job_info['base_pay']} coins\n"
+            value += f"Bonus Chance: {job_info['bonus_chance']*100}%\n"
+            value += f"Bonus Amount: {job_info['bonus_amount']} coins"
             if job_name not in user_jobs:
-                value += f"\nCost to Unlock: {job['cost']} coins"
+                value += f"\nCost to Unlock: {job_info['cost']} coins"
             
             embed.add_field(
                 name=f"{status} {job_name}",
@@ -120,63 +117,120 @@ class JobMarketView(discord.ui.View):
 class JobMarketCog(commands.Cog):
     def __init__(self, client):
         self.client = client
-    
-    async def get_all_jobs(self):
-        """Get all available jobs from the database."""
-        jobs = await db.fetch('''
-            SELECT * FROM jobs ORDER BY name
-        ''')
+        self.jobs_file = 'data/jobs.json'
+        self.jobs: Dict[str, Dict] = {
+            "McDonalds-Employee": {"base_pay": 75, "bonus_chance": 0.2, "bonus_amount": 50, "cost": 0},
+            "Artist": {"base_pay": 300, "bonus_chance": 0.25, "bonus_amount": 250, "cost": 1000},
+            "Teacher": {"base_pay": 350, "bonus_chance": 0.1, "bonus_amount": 100, "cost": 2000},
+            "Software-Developer": {"base_pay": 500, "bonus_chance": 0.2, "bonus_amount": 200, "cost": 5000},
+            "Police-Officer": {"base_pay": 450, "bonus_chance": 0.15, "bonus_amount": 150, "cost": 7500},
+            "Engineer": {"base_pay": 550, "bonus_chance": 0.2, "bonus_amount": 250, "cost": 10000},
+            "Doctor": {"base_pay": 600, "bonus_chance": 0.1, "bonus_amount": 300, "cost": 15000},
+            "Politician": {"base_pay": 750, "bonus_chance": 0.3, "bonus_amount": 350, "cost": 25000},
+            "Stripper": {"base_pay": 150, "bonus_chance": 0.5, "bonus_amount": 150, "cost": 1000},
+            "Pilot": {"base_pay": 800, "bonus_chance": 0.15, "bonus_amount": 400, "cost": 30000},
+            "Scientist": {"base_pay": 700, "bonus_chance": 0.25, "bonus_amount": 300, "cost": 20000},
+            "Lawyer": {"base_pay": 650, "bonus_chance": 0.3, "bonus_amount": 250, "cost": 18000},
+            "Real-Estate-Agent": {"base_pay": 400, "bonus_chance": 0.4, "bonus_amount": 300, "cost": 10000},
+            "Stock-Trader": {"base_pay": 600, "bonus_chance": 0.5, "bonus_amount": 400, "cost": 20000},
+            "Youtuber": {"base_pay": 300, "bonus_chance": 0.6, "bonus_amount": 500, "cost": 5000},
+            "Streamer": {"base_pay": 250, "bonus_chance": 0.55, "bonus_amount": 400, "cost": 4000},
+            "Esportler": {"base_pay": 400, "bonus_chance": 0.45, "bonus_amount": 300, "cost": 8000},
+            "Astronaut": {"base_pay": 1000, "bonus_chance": 0.2, "bonus_amount": 500, "cost": 50000},
+            "Flight-Attendant": {"base_pay": 250, "bonus_chance": 0.2, "bonus_amount": 100, "cost": 3000},
+            "Delivery-Driver": {"base_pay": 150, "bonus_chance": 0.25, "bonus_amount": 50, "cost": 0},
+            "Plumber": {"base_pay": 300, "bonus_chance": 0.2, "bonus_amount": 100, "cost": 4000},
+            "Farmer": {"base_pay": 220, "bonus_chance": 0.2, "bonus_amount": 80, "cost": 2000},
+            "Life-Coach": {"base_pay": 350, "bonus_chance": 0.3, "bonus_amount": 150, "cost": 6000},
+        }
+        self.current_jobs: List[str] = []
+        self.user_jobs: Dict[str, List[str]] = {}  # Store unlocked jobs per user
+        self.load_job_data()
+
+    def load_job_data(self):
+        if not os.path.exists('data'):
+            os.makedirs('data')
         
-        return [dict(job) for job in jobs]
-    
-    async def get_user_jobs(self, user_id):
-        """Get list of jobs unlocked by a specific user."""
-        rows = await db.fetch('''
-            SELECT job_name FROM user_jobs 
-            WHERE user_id = $1
-        ''', int(user_id))
+        if os.path.exists(self.jobs_file):
+            with open(self.jobs_file, 'r') as f:
+                data = json.load(f)
+                self.current_jobs = data.get('current_jobs', [])
+                # Load user jobs
+                self.user_jobs = data.get('user_jobs', {})
+        else:
+            self.rotate_jobs()
+
+    def save_job_data(self):
+        data = {
+            'current_jobs': self.current_jobs,
+            'user_jobs': self.user_jobs
+        }
+        with open(self.jobs_file, 'w') as f:
+            json.dump(data, f)
+
+    def rotate_jobs(self):
+        # Make all jobs available
+        self.current_jobs = list(self.jobs.keys())
+        self.save_job_data()
+        print(f"Available jobs: {self.current_jobs}")
+
+    async def get_bank_data(self):
+        if not os.path.exists('data'):
+            os.makedirs('data')
         
-        return [row['job_name'] for row in rows]
-    
+        if not os.path.exists('data/bank.json'):
+            with open('data/bank.json', 'w') as f:
+                json.dump({}, f)
+
+        with open('data/bank.json', 'r') as f:
+            content = f.read().strip()
+            if not content:
+                users = {}
+            else:
+                try:
+                    users = json.loads(content)
+                except json.JSONDecodeError:
+                    users = {}
+            
+        if not content:
+            with open('data/bank.json', 'w') as f:
+                json.dump(users, f)
+                
+        return users
+
     async def open_account(self, user):
-        """Create a bank account for a user if they don't have one."""
-        user_id = user.id
-        
-        # Check if user already has an account
-        account = await self.get_account(user_id)
-        if account:
-            return False
-        
-        # Create new account with default values
-        await db.execute('''
-            INSERT INTO bank_accounts (user_id, wallet, bank) 
-            VALUES ($1, $2, $3)
-            ON CONFLICT (user_id) DO NOTHING
-        ''', user_id, 50, 0)
-        
+        users = await self.get_bank_data()
+        user_id = str(user.id)
+
+        if user_id not in users:
+            users[user_id] = {}
+            users[user_id]["wallet"] = 50
+            users[user_id]["bank"] = 0
+            users[user_id]["last_work"] = None
+            with open('data/bank.json', 'w') as f:
+                json.dump(users, f)
+
+        if user_id not in self.user_jobs:
+            self.user_jobs[user_id] = []
+            self.save_job_data()
+
         return True
-    
-    async def get_account(self, user_id):
-        """Get a user's bank account data."""
-        account = await db.fetchrow('''
-            SELECT * FROM bank_accounts WHERE user_id = $1
-        ''', user_id)
-        
-        if account:
-            return dict(account)
-        return None
+
+    def get_user_jobs(self, user_id: str) -> List[str]:
+        """Get list of jobs unlocked by a specific user"""
+        return self.user_jobs.get(user_id, [])
 
     @commands.command()
     async def jobs(self, ctx, page: int = 1):
-        """Display available jobs in the job market."""
+        """Display available jobs in the job market"""
         await self.open_account(ctx.author)
         
-        # Get all available jobs
-        all_jobs = await self.get_all_jobs()
+        user_id = str(ctx.author.id)
+        user_jobs = self.get_user_jobs(user_id)
         
         # Calculate total pages
         jobs_per_page = 3
-        total_jobs = len(all_jobs)
+        total_jobs = len(self.jobs)
         total_pages = (total_jobs + jobs_per_page - 1) // jobs_per_page
         
         # Ensure page is within valid range
@@ -185,10 +239,7 @@ class JobMarketCog(commands.Cog):
         # Get jobs for current page
         start_idx = (page - 1) * jobs_per_page
         end_idx = min(start_idx + jobs_per_page, total_jobs)
-        current_jobs = all_jobs[start_idx:end_idx]
-        
-        user_id = str(ctx.author.id)
-        user_jobs = await self.get_user_jobs(user_id)
+        current_jobs = list(self.jobs.items())[start_idx:end_idx]
         
         embed = discord.Embed(
             title="📋 Job Market",
@@ -196,14 +247,13 @@ class JobMarketCog(commands.Cog):
             color=discord.Color.blue()
         )
         
-        for job in current_jobs:
-            job_name = job['name']
+        for job_name, job_info in current_jobs:
             status = "✅ Unlocked" if job_name in user_jobs else "🔒 Locked"
-            value = f"Base Pay: {job['base_pay']} coins\n"
-            value += f"Bonus Chance: {float(job['bonus_chance'])*100}%\n"
-            value += f"Bonus Amount: {job['bonus_amount']} coins"
+            value = f"Base Pay: {job_info['base_pay']} coins\n"
+            value += f"Bonus Chance: {job_info['bonus_chance']*100}%\n"
+            value += f"Bonus Amount: {job_info['bonus_amount']} coins"
             if job_name not in user_jobs:
-                value += f"\nCost to Unlock: {job['cost']} coins"
+                value += f"\nCost to Unlock: {job_info['cost']} coins"
             
             embed.add_field(
                 name=f"{status} {job_name}",
@@ -232,7 +282,7 @@ class JobMarketCog(commands.Cog):
 
     @commands.command()
     async def buyjob(self, ctx, *, job_name: str = None):
-        """Purchase a job to unlock it."""
+        """Purchase a job to unlock it"""
         await self.open_account(ctx.author)
         
         if not job_name:
@@ -244,15 +294,8 @@ class JobMarketCog(commands.Cog):
             await ctx.send(embed=embed)
             return
             
-        # Standardize job name (first letter of each word uppercase)
-        job_name = '-'.join(word.title() for word in job_name.split('-'))
-        
-        # Check if the job exists
-        job = await db.fetchrow('''
-            SELECT * FROM jobs WHERE name = $1
-        ''', job_name)
-        
-        if not job:
+        job_name = job_name.title()
+        if job_name not in self.jobs:
             embed = discord.Embed(
                 title="Error",
                 description=f"'{job_name}' is not a valid job. Use -jobs to see available jobs.",
@@ -261,8 +304,8 @@ class JobMarketCog(commands.Cog):
             await ctx.send(embed=embed)
             return
             
-        user_id = ctx.author.id
-        user_jobs = await self.get_user_jobs(str(user_id))
+        user_id = str(ctx.author.id)
+        user_jobs = self.get_user_jobs(user_id)
         
         if job_name in user_jobs:
             embed = discord.Embed(
@@ -283,38 +326,27 @@ class JobMarketCog(commands.Cog):
             await ctx.send(embed=embed)
             return
             
-        # Get user's account and check if they have enough money
-        account = await self.get_account(user_id)
+        job_info = self.jobs[job_name]
+        users = await self.get_bank_data()
         
-        if account['wallet'] < job['cost']:
+        if users[user_id]["wallet"] < job_info['cost']:
             embed = discord.Embed(
                 title="Error",
-                description=f"You don't have enough coins! You need {job['cost']} coins to unlock this job.",
+                description=f"You don't have enough coins! You need {job_info['cost']} coins to unlock this job.",
                 color=discord.Color.red()
             )
             await ctx.send(embed=embed)
             return
             
-        # Purchase the job using transaction
-        async with db.pool.acquire() as conn:
-            async with conn.transaction():
-                # Deduct cost from wallet
-                await conn.execute('''
-                    UPDATE bank_accounts 
-                    SET wallet = wallet - $1
-                    WHERE user_id = $2
-                ''', job['cost'], user_id)
-                
-                # Add job to user's jobs
-                await conn.execute('''
-                    INSERT INTO user_jobs (user_id, job_name)
-                    VALUES ($1, $2)
-                    ON CONFLICT (user_id, job_name) DO NOTHING
-                ''', user_id, job_name)
+        # Purchase the job
+        users[user_id]["wallet"] -= job_info['cost']
+        user_jobs.append(job_name)
+        self.user_jobs[user_id] = user_jobs
+        self.save_job_data()
         
-        # Get updated wallet and jobs list
-        updated_account = await self.get_account(user_id)
-        updated_jobs = await self.get_user_jobs(str(user_id))
+        # Save updated wallet
+        with open('data/bank.json', 'w') as f:
+            json.dump(users, f)
             
         embed = discord.Embed(
             title="🎉 Job Unlocked!",
@@ -324,13 +356,13 @@ class JobMarketCog(commands.Cog):
         
         embed.add_field(
             name="New Wallet Balance",
-            value=f"{updated_account['wallet']} coins",
+            value=f"{users[user_id]['wallet']} coins",
             inline=False
         )
         
         embed.add_field(
             name="Current Jobs",
-            value="\n".join(updated_jobs),
+            value="\n".join(user_jobs),
             inline=False
         )
         
@@ -342,7 +374,7 @@ class JobMarketCog(commands.Cog):
 
     @commands.command()
     async def removejob(self, ctx, *, job_name: str = None):
-        """Remove a job from your current jobs."""
+        """Remove a job from your current jobs"""
         await self.open_account(ctx.author)
         
         if not job_name:
@@ -354,11 +386,9 @@ class JobMarketCog(commands.Cog):
             await ctx.send(embed=embed)
             return
             
-        # Standardize job name
-        job_name = '-'.join(word.title() for word in job_name.split('-'))
-        
-        user_id = ctx.author.id
-        user_jobs = await self.get_user_jobs(str(user_id))
+        job_name = job_name.title()
+        user_id = str(ctx.author.id)
+        user_jobs = self.get_user_jobs(user_id)
         
         if job_name not in user_jobs:
             embed = discord.Embed(
@@ -370,13 +400,9 @@ class JobMarketCog(commands.Cog):
             return
             
         # Remove the job
-        await db.execute('''
-            DELETE FROM user_jobs
-            WHERE user_id = $1 AND job_name = $2
-        ''', user_id, job_name)
-        
-        # Get updated jobs list
-        updated_jobs = await self.get_user_jobs(str(user_id))
+        user_jobs.remove(job_name)
+        self.user_jobs[user_id] = user_jobs
+        self.save_job_data()
         
         embed = discord.Embed(
             title="🗑️ Job Removed",
@@ -386,7 +412,7 @@ class JobMarketCog(commands.Cog):
         
         embed.add_field(
             name="Current Jobs",
-            value="\n".join(updated_jobs) if updated_jobs else "No jobs",
+            value="\n".join(user_jobs) if user_jobs else "No jobs",
             inline=False
         )
         
@@ -399,11 +425,12 @@ class JobMarketCog(commands.Cog):
     @commands.command()
     @commands.cooldown(1, 86400, commands.BucketType.user)  # 24 hour cooldown
     async def work(self, ctx):
-        """Work at all your jobs to earn money."""
+        """Work at all your jobs to earn money"""
         await self.open_account(ctx.author)
+        self.rotate_jobs()
         
-        user_id = ctx.author.id
-        user_jobs = await self.get_user_jobs(str(user_id))
+        user_id = str(ctx.author.id)
+        user_jobs = self.get_user_jobs(user_id)
         
         if not user_jobs:
             embed = discord.Embed(
@@ -414,40 +441,32 @@ class JobMarketCog(commands.Cog):
             await ctx.send(embed=embed)
             return
             
+        users = await self.get_bank_data()
         total_earnings = 0
         earnings_breakdown = []
         
-        # Get job info for each user job
+        # Calculate earnings for each job
         for job_name in user_jobs:
-            job = await db.fetchrow('''
-                SELECT * FROM jobs
-                WHERE name = $1
-            ''', job_name)
+            job_info = self.jobs[job_name]
+            earnings = job_info['base_pay']
+            bonus_earned = 0
             
-            if job:
-                # Calculate earnings for this job
-                earnings = job['base_pay']
-                bonus_earned = 0
-                
-                # Check for bonus
-                if random.random() < float(job['bonus_chance']):
-                    bonus_earned = job['bonus_amount']
-                    earnings += bonus_earned
-                    earnings_breakdown.append(f"🎉 {job_name}: {job['base_pay']} coins + {bonus_earned} coins bonus")
-                else:
-                    earnings_breakdown.append(f"{job_name}: {earnings} coins")
-                
-                total_earnings += earnings
+            # Check for bonus
+            if random.random() < job_info['bonus_chance']:
+                bonus_earned = job_info['bonus_amount']
+                earnings += bonus_earned
+                earnings_breakdown.append(f"🎉 {job_name}: {job_info['base_pay']} coins + {bonus_earned} coins bonus")
+            else:
+                earnings_breakdown.append(f"{job_name}: {earnings} coins")
+            
+            total_earnings += earnings
+            
+        # Update user's wallet
+        users[user_id]["wallet"] += total_earnings
         
-        # Update user's wallet and last_work timestamp
-        await db.execute('''
-            UPDATE bank_accounts 
-            SET wallet = wallet + $1, last_work = $2
-            WHERE user_id = $3
-        ''', total_earnings, datetime.datetime.utcnow(), user_id)
-        
-        # Get updated account info
-        updated_account = await self.get_account(user_id)
+        # Save updated data
+        with open('data/bank.json', 'w') as f:
+            json.dump(users, f)
             
         # Create and send embed
         embed = discord.Embed(
@@ -464,7 +483,7 @@ class JobMarketCog(commands.Cog):
         
         embed.add_field(
             name="New Wallet Balance",
-            value=f"{updated_account['wallet']} coins",
+            value=f"{users[user_id]['wallet']} coins",
             inline=False
         )
         
@@ -507,11 +526,11 @@ class JobMarketCog(commands.Cog):
 
     @commands.command()
     async def myjobs(self, ctx):
-        """Display your currently owned jobs."""
+        """Display your currently owned jobs"""
         await self.open_account(ctx.author)
         
         user_id = str(ctx.author.id)
-        user_jobs = await self.get_user_jobs(user_id)
+        user_jobs = self.get_user_jobs(user_id)
         
         if not user_jobs:
             embed = discord.Embed(
@@ -532,21 +551,16 @@ class JobMarketCog(commands.Cog):
         )
         
         for job_name in user_jobs:
-            job = await db.fetchrow('''
-                SELECT * FROM jobs
-                WHERE name = $1
-            ''', job_name)
+            job_info = self.jobs[job_name]
+            value = f"Base Pay: {job_info['base_pay']} coins\n"
+            value += f"Bonus Chance: {job_info['bonus_chance']*100}%\n"
+            value += f"Bonus Amount: {job_info['bonus_amount']} coins"
             
-            if job:
-                value = f"Base Pay: {job['base_pay']} coins\n"
-                value += f"Bonus Chance: {float(job['bonus_chance'])*100}%\n"
-                value += f"Bonus Amount: {job['bonus_amount']} coins"
-                
-                embed.add_field(
-                    name=f"✅ {job_name}",
-                    value=value,
-                    inline=False
-                )
+            embed.add_field(
+                name=f"✅ {job_name}",
+                value=value,
+                inline=False
+            )
         
         embed.add_field(
             name="📝 Commands",
@@ -560,7 +574,4 @@ class JobMarketCog(commands.Cog):
                         icon_url=ctx.author.avatar.url if ctx.author.avatar else ctx.author.default_avatar.url)
         embed.timestamp = datetime.datetime.utcnow()
         
-        await ctx.send(embed=embed)
-
-async def setup(client):
-    await client.add_cog(JobMarketCog(client))
+        await ctx.send(embed=embed) 

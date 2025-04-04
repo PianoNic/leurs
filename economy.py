@@ -1,8 +1,10 @@
 import discord
 from discord.ext import commands
+import json
+import os
+import random
 import datetime
 import math
-from database import db
 
 class BalanceLeaderboardView(discord.ui.View):
     def __init__(self, cog, ctx, page, total_pages):
@@ -52,7 +54,37 @@ class BalanceLeaderboardView(discord.ui.View):
 
     async def update_page(self, new_page: int):
         # Get all user data from database 
-        user_list = await self.cog.get_leaderboard_data()
+        users = await self.cog.get_bank_data()
+        
+        # Create list from all users in the database
+        user_list = []
+        
+        # Add all existing database entries
+        for user_id, user_data in users.items():
+            try:
+                # Try to get the member object
+                member = self.ctx.guild.get_member(int(user_id))
+                
+                # Calculate total balance
+                wallet = user_data.get("wallet", 0)
+                bank = user_data.get("bank", 0)
+                total_balance = wallet + bank
+                
+                # Get user data
+                user_entry = {
+                    "id": user_id,
+                    "wallet": wallet,
+                    "bank": bank,
+                    "total": total_balance,
+                    "member": member
+                }
+                user_list.append(user_entry)
+            except Exception as e:
+                # Skip problematic entries
+                continue
+        
+        # Sort by total balance (highest first)
+        user_list.sort(key=lambda x: x["total"], reverse=True)
         
         # Paginate results (10 per page)
         total_pages = max(1, math.ceil(len(user_list) / 10))
@@ -136,11 +168,11 @@ class EconomyCog(commands.Cog):
     @commands.command()
     async def balance(self, ctx):
         await self.open_account(ctx.author)
-        
-        # Get user's bank account
-        account = await self.get_account(ctx.author.id)
-        wallet_amt = account['wallet']
-        bank_amt = account['bank']
+        user = ctx.author
+        users = await self.get_bank_data()
+
+        wallet_amt = users[str(ctx.author.id)]["wallet"]
+        bank_amt = users[str(ctx.author.id)]["bank"]
 
         em = discord.Embed(title=f"{ctx.author.name}'s balance", color=discord.Color.from_rgb(255, 255, 255))
         em.add_field(name="Wallet balance", value=wallet_amt)
@@ -165,7 +197,8 @@ class EconomyCog(commands.Cog):
         import random
         
         await self.open_account(ctx.author)
-        account = await self.get_account(ctx.author.id)
+        users = await self.get_bank_data()
+        user = ctx.author
         
         earnings = random.randrange(101)  # amount the user gets for -beg = max 101
         
@@ -177,7 +210,7 @@ class EconomyCog(commands.Cog):
         
         embed.set_thumbnail(url=ctx.author.avatar.url if ctx.author.avatar else ctx.author.default_avatar.url)
         
-        new_balance = account['wallet'] + earnings
+        new_balance = users[str(ctx.author.id)]["wallet"] + earnings
         embed.add_field(
             name="New Wallet Balance", 
             value=f"{new_balance} coins",
@@ -189,8 +222,10 @@ class EconomyCog(commands.Cog):
         
         await ctx.send(embed=embed)
         
-        # Update user's wallet in the database
-        await self.update_balance(ctx.author.id, 'wallet', earnings)
+        users[str(ctx.author.id)]["wallet"] += earnings
+        
+        with open('data/bank.json', 'w') as f:
+            json.dump(users, f)
 
     @beg.error  # error handling for -beg
     async def beg_error(self, ctx, error):
@@ -224,82 +259,387 @@ class EconomyCog(commands.Cog):
             await ctx.send(embed=embed)
     
     async def open_account(self, user):
-        """Create a bank account for a user if they don't have one."""
-        user_id = user.id
-        
-        # Check if user already has an account
-        account = await self.get_account(user_id)
-        if account:
+        users = await self.get_bank_data()
+
+        if str(user.id) in users:
             return False
-        
-        # Create new account with default values
-        await db.execute('''
-            INSERT INTO bank_accounts (user_id, wallet, bank) 
-            VALUES ($1, $2, $3)
-            ON CONFLICT (user_id) DO NOTHING
-        ''', user_id, 50, 0)
-        
+        else:
+            users[str(user.id)] = {}
+            users[str(user.id)]["wallet"] = 50  # starting balance
+            users[str(user.id)]["bank"] = 0
+
+        with open('data/bank.json', 'w') as f:  # opens account for new user
+            json.dump(users, f)
         return True
     
-    async def get_account(self, user_id):
-        """Get a user's bank account data."""
-        account = await db.fetchrow('''
-            SELECT * FROM bank_accounts WHERE user_id = $1
-        ''', user_id)
+    async def get_bank_data(self):
+        if not os.path.exists('data'):
+            os.makedirs('data')
         
-        if account:
-            return dict(account)
-        return None
-    
-    async def update_balance(self, user_id, balance_type, amount):
-        """Update a user's balance."""
-        if balance_type not in ['wallet', 'bank']:
-            raise ValueError("balance_type must be 'wallet' or 'bank'")
+        if not os.path.exists('data/bank.json'):
+            with open('data/bank.json', 'w') as f:
+                json.dump({}, f)
+
+        with open('data/bank.json', 'r') as f:
+            content = f.read().strip()
+            if not content:
+                users = {}
+            else:
+                try:
+                    users = json.loads(content)
+                except json.JSONDecodeError:
+                    users = {}
             
-        await db.execute(f'''
-            UPDATE bank_accounts 
-            SET {balance_type} = {balance_type} + $1
-            WHERE user_id = $2
-        ''', amount, user_id)
+        if not content:
+            with open('data/bank.json', 'w') as f:
+                json.dump(users, f)
+                
+        return users
+
+    @commands.command()
+    async def withdraw(self, ctx, amount=None):
+        await self.open_account(ctx.author)
+        users = await self.get_bank_data()
+        user = ctx.author
         
-    async def set_balance(self, user_id, balance_type, amount):
-        """Set a user's balance to a specific amount."""
-        if balance_type not in ['wallet', 'bank']:
-            raise ValueError("balance_type must be 'wallet' or 'bank'")
+        if amount is None:
+            embed = discord.Embed(
+                title="Error",
+                description="Please specify an amount to withdraw",
+                color=discord.Color.red()
+            )
+            await ctx.send(embed=embed)
+            return
             
-        await db.execute(f'''
-            UPDATE bank_accounts 
-            SET {balance_type} = $1
-            WHERE user_id = $2
-        ''', amount, user_id)
-    
-    async def get_leaderboard_data(self):
-        """Get leaderboard data sorted by total wealth."""
-        # Get all user accounts from the database
-        rows = await db.fetch('''
-            SELECT user_id, wallet, bank, (wallet + bank) as total
-            FROM bank_accounts
-            ORDER BY total DESC
-        ''')
+        # Handle percentage-based withdrawals
+        if amount.lower() == "all":
+            amount = users[str(user.id)]["bank"]
+        elif "%" in amount:
+            try:
+                percentage = int(amount.replace("%", ""))
+                if percentage <= 0 or percentage > 100:
+                    raise ValueError
+                amount = int(users[str(user.id)]["bank"] * (percentage / 100))
+            except ValueError:
+                embed = discord.Embed(
+                    title="Error",
+                    description="Please enter a valid percentage between 1% and 100%",
+                    color=discord.Color.red()
+                )
+                await ctx.send(embed=embed)
+                return
+        else:
+            try:
+                amount = int(amount)
+            except ValueError:
+                embed = discord.Embed(
+                    title="Error",
+                    description="Please enter a valid number, percentage, or 'all'",
+                    color=discord.Color.red()
+                )
+                await ctx.send(embed=embed)
+                return
         
+        if amount <= 0:
+            embed = discord.Embed(
+                title="Error",
+                description="Amount must be positive!",
+                color=discord.Color.red()
+            )
+            await ctx.send(embed=embed)
+            return
+            
+        if amount > users[str(user.id)]["bank"]:
+            embed = discord.Embed(
+                title="Error",
+                description="You don't have that much money in your bank!",
+                color=discord.Color.red()
+            )
+            await ctx.send(embed=embed)
+            return
+            
+        # Update balances
+        users[str(user.id)]["bank"] -= amount
+        users[str(user.id)]["wallet"] += amount
+        
+        # Save updated data
+        with open('data/bank.json', 'w') as f:
+            json.dump(users, f)
+            
+        # Create and send embed
+        embed = discord.Embed(
+            title="Withdrawal Successful",
+            description=f"You withdrew **{amount} coins** from your bank!",
+            color=discord.Color.green()
+        )
+        
+        embed.add_field(
+            name="Wallet Balance", 
+            value=f"{users[str(user.id)]['wallet']} coins",
+            inline=True
+        )
+        
+        embed.add_field(
+            name="Bank Balance", 
+            value=f"{users[str(user.id)]['bank']} coins",
+            inline=True
+        )
+        
+        embed.set_footer(text=f"Requested by {ctx.author.name}", icon_url=ctx.author.avatar.url if ctx.author.avatar else ctx.author.default_avatar.url)
+        embed.timestamp = datetime.datetime.utcnow()
+        
+        await ctx.send(embed=embed)
+
+    @commands.command()
+    async def deposit(self, ctx, amount=None):
+        await self.open_account(ctx.author)
+        users = await self.get_bank_data()
+        user = ctx.author
+        
+        if amount is None:
+            embed = discord.Embed(
+                title="Error",
+                description="Please specify an amount to deposit",
+                color=discord.Color.red()
+            )
+            await ctx.send(embed=embed)
+            return
+            
+        # Handle percentage-based deposits
+        if amount.lower() == "all":
+            amount = users[str(user.id)]["wallet"]
+        elif "%" in amount:
+            try:
+                percentage = int(amount.replace("%", ""))
+                if percentage <= 0 or percentage > 100:
+                    raise ValueError
+                amount = int(users[str(user.id)]["wallet"] * (percentage / 100))
+            except ValueError:
+                embed = discord.Embed(
+                    title="Error",
+                    description="Please enter a valid percentage between 1% and 100%",
+                    color=discord.Color.red()
+                )
+                await ctx.send(embed=embed)
+                return
+        else:
+            try:
+                amount = int(amount)
+            except ValueError:
+                embed = discord.Embed(
+                    title="Error",
+                    description="Please enter a valid number, percentage, or 'all'",
+                    color=discord.Color.red()
+                )
+                await ctx.send(embed=embed)
+                return
+        
+        if amount <= 0:
+            embed = discord.Embed(
+                title="Error",
+                description="Amount must be positive!",
+                color=discord.Color.red()
+            )
+            await ctx.send(embed=embed)
+            return
+            
+        if amount > users[str(user.id)]["wallet"]:
+            embed = discord.Embed(
+                title="Error",
+                description="You don't have that much money in your wallet!",
+                color=discord.Color.red()
+            )
+            await ctx.send(embed=embed)
+            return
+                    
+        # Update balances
+        users[str(user.id)]["wallet"] -= amount
+        users[str(user.id)]["bank"] += amount
+        
+        # Save updated data
+        with open('data/bank.json', 'w') as f:
+            json.dump(users, f)
+            
+        # Create and send embed
+        embed = discord.Embed(
+            title="Deposit Successful",
+            description=f"You deposited **{amount} coins** into your bank!",
+            color=discord.Color.green()
+        )
+        
+        embed.add_field(
+            name="Wallet Balance", 
+            value=f"{users[str(user.id)]['wallet']} coins",
+            inline=True
+        )
+        
+        embed.add_field(
+            name="Bank Balance", 
+            value=f"{users[str(user.id)]['bank']} coins",
+            inline=True
+        )
+        
+        embed.set_footer(text=f"Requested by {ctx.author.name}", icon_url=ctx.author.avatar.url if ctx.author.avatar else ctx.author.default_avatar.url)
+        embed.timestamp = datetime.datetime.utcnow()
+        
+        await ctx.send(embed=embed)
+
+    @commands.command(aliases=["baltop"])
+    async def balancetop(self, ctx, page: int = 1):
+        """Show the server's balance leaderboard"""
+        # Get all user data from the database file directly
+        users = await self.get_bank_data()
+        
+        # Create list from all users in the database
         user_list = []
         
-        # Process the user data 
-        for row in rows:
+        # First, add all existing database entries
+        for user_id, user_data in users.items():
             try:
-                # Try to get the member object 
-                member = self.client.get_user(int(row['user_id']))
+                # Try to get the member object, fetch from Discord if needed
+                member = ctx.guild.get_member(int(user_id))
                 
-                # Create user entry
+                # Calculate total balance
+                wallet = user_data.get("wallet", 0)
+                bank = user_data.get("bank", 0)
+                total_balance = wallet + bank
+                
+                # Get user data
                 user_entry = {
-                    "id": str(row['user_id']),
-                    "wallet": row['wallet'],
-                    "bank": row['bank'],
-                    "total": row['total'],
+                    "id": user_id,
+                    "wallet": wallet,
+                    "bank": bank,
+                    "total": total_balance,
                     "member": member
                 }
                 user_list.append(user_entry)
             except Exception as e:
+                # Skip problematic entries
                 continue
         
-        return user_list
+        # Now sort and display
+        # Sort by total balance (highest first)
+        user_list.sort(key=lambda x: x["total"], reverse=True)
+        
+        # Paginate results (10 per page)
+        total_pages = max(1, math.ceil(len(user_list) / 10))
+        
+        # Ensure page is within valid range
+        page = max(1, min(page, total_pages))
+        
+        start_idx = (page - 1) * 10
+        end_idx = min(start_idx + 10, len(user_list))
+        
+        # Create embed
+        embed = discord.Embed(
+            title=f"💰 Balance Leaderboard",
+            description=f"Top members ranked by total wealth.",
+            color=discord.Color.gold()
+        )
+        
+        # Add leaderboard entries
+        if not user_list:
+            embed.description = "No users have any money yet!"
+        else:
+            # Get rank emojis for top 3
+            rank_emoji = {0: "🥇", 1: "🥈", 2: "🥉"}
+            
+            for idx, user_data in enumerate(user_list[start_idx:end_idx], start=start_idx + 1):
+                member = user_data["member"]
+                user_id = user_data["id"]
+                position = idx - 1 + start_idx  # Zero-based position
+                
+                # Get appropriate emoji based on rank
+                prefix = rank_emoji.get(position, f"{idx}.")
+                
+                # Get the name and icon url
+                if member:
+                    name = member.name
+                    icon_url = member.avatar.url if member.avatar else member.default_avatar.url
+                else:
+                    # Try to fetch user info from Discord
+                    try:
+                        user = await self.client.fetch_user(int(user_id))
+                        name = user.name
+                        icon_url = user.avatar.url if user.avatar else user.default_avatar.url
+                    except:
+                        # If all else fails, use a generic name
+                        name = f"User-{user_id[-4:]}"
+                        icon_url = None
+                
+                # Create embed field
+                field_name = f"{prefix} {name}"
+                field_value = f"**{user_data['total']} coins**"
+                
+                embed.add_field(name=field_name, value=field_value, inline=False)
+                
+                # Show first-place user as thumbnail
+                if position == 0 and icon_url:
+                    embed.set_thumbnail(url=icon_url)
+        
+        embed.set_footer(text=f"Page {page}/{total_pages} • Requested by {ctx.author.name}", 
+                         icon_url=ctx.author.avatar.url if ctx.author.avatar else ctx.author.default_avatar.url)
+        embed.timestamp = datetime.datetime.utcnow()
+        
+        # Create view with pagination buttons
+        view = BalanceLeaderboardView(self, ctx, page, total_pages)
+        
+        # Send embed with view
+        view.message = await ctx.send(embed=embed, view=view)
+
+    async def add_balance(self, user_id, amount):
+        """Add balance to a user's account (admin command)"""
+        users = await self.get_bank_data()
+        
+        # Convert user_id to string for consistency
+        user_id = str(user_id)
+        
+        # Create account if user doesn't exist
+        if user_id not in users:
+            users[user_id] = {}
+            users[user_id]["wallet"] = 0
+            users[user_id]["bank"] = 0
+        
+        # Add amount to wallet
+        users[user_id]["wallet"] += amount
+        
+        # Save updated data
+        with open('data/bank.json', 'w') as f:
+            json.dump(users, f)
+            
+        return users[user_id]["wallet"]
+    
+    async def remove_balance(self, user_id, amount):
+        """Remove balance from a user's account (admin command)"""
+        users = await self.get_bank_data()
+        
+        # Convert user_id to string for consistency
+        user_id = str(user_id)
+        
+        # Create account if user doesn't exist
+        if user_id not in users:
+            users[user_id] = {}
+            users[user_id]["wallet"] = 0
+            users[user_id]["bank"] = 0
+            return False  # Can't remove from empty account
+        
+        # Check if user has enough in wallet
+        if users[user_id]["wallet"] >= amount:
+            users[user_id]["wallet"] -= amount
+        # If not enough in wallet, check combined balance
+        elif (users[user_id]["wallet"] + users[user_id]["bank"]) >= amount:
+            # Take what we can from wallet
+            remainder = amount - users[user_id]["wallet"]
+            users[user_id]["wallet"] = 0
+            # Take the rest from bank
+            users[user_id]["bank"] -= remainder
+        else:
+            # Not enough money, set to zero
+            users[user_id]["wallet"] = 0
+            users[user_id]["bank"] = 0
+        
+        # Save updated data
+        with open('data/bank.json', 'w') as f:
+            json.dump(users, f)
+            
+        return True
