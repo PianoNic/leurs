@@ -62,7 +62,7 @@ class LastFMCog(commands.Cog):
         if not lastfm_username:
             embed = discord.Embed(
                 title="LastFM Not Linked",
-                description="You haven't linked your LastFM account yet. Use `-lastfm_login [username]` to link it!",
+                description="You haven't linked your LastFM account yet. Use `-login [username]` to link it!",
                 color=discord.Color.red()
             )
             embed.set_footer(text=f"Requested by {ctx.author.name}", 
@@ -139,7 +139,7 @@ class LastFMCog(commands.Cog):
         if not lastfm_username:
             embed = discord.Embed(
                 title="LastFM Not Linked",
-                description="You haven't linked your LastFM account yet. Use `-lastfm_login [username]` to link it!",
+                description="You haven't linked your LastFM account yet. Use `-login [username]` to link it!",
                 color=discord.Color.red()
             )
             embed.set_footer(text=f"Requested by {ctx.author.name}", 
@@ -238,6 +238,122 @@ class LastFMCog(commands.Cog):
                 color=discord.Color.red()
             )
             await ctx.send(embed=embed)
+
+    @commands.command(aliases=["snp"])
+    async def servernowplaying(self, ctx):
+        try:
+            # Load LastFM usernames from json
+            with open('data/lastfm.json', 'r') as f:
+                lastfm_data = json.load(f)
+            
+            if not lastfm_data:
+                await ctx.send("No LastFM accounts are linked to any server members.")
+                return
+                
+            playing_users = []
+            
+            # Check each linked LastFM account
+            for user_id, lastfm_username in lastfm_data.items():
+                # Use the same logic as the np command
+                url = f"http://ws.audioscrobbler.com/2.0/?method=user.getRecentTracks&user={lastfm_username}&api_key={lastfmKey}&format=json&limit=1"
+                
+                try:
+                    response = requests.get(url)
+                    response.raise_for_status()
+                    data = response.json()
+                    
+                    if 'recenttracks' in data and 'track' in data['recenttracks']:
+                        tracks = data['recenttracks']['track']
+                        if tracks:
+                            current_track = tracks[0]
+                            
+                            # Check if track is currently playing
+                            is_playing = '@attr' in current_track and current_track['@attr'].get('nowplaying') == 'true'
+                            
+                            if is_playing:
+                                artist = current_track['artist']['#text']
+                                song = current_track['name']
+                                
+                                playing_users.append({
+                                    'username': lastfm_username,
+                                    'song': song,
+                                    'artist': artist
+                                })
+                                
+                except Exception as e:
+                    print(f"Error fetching data for {lastfm_username}: {str(e)}")
+                    continue
+            
+            # Create embed
+            embed = discord.Embed(
+                title="Currently Playing in Server",
+                color=0x2b2d31
+            )
+            
+            if playing_users:
+                description = "\n"  # Add initial spacing after header
+                for i, user in enumerate(playing_users):
+                    # Create clickable links
+                    artist_url = f"https://www.last.fm/music/{user['artist'].replace(' ', '+')}"
+                    track_url = f"https://www.last.fm/music/{user['artist'].replace(' ', '+')}/{user['song'].replace(' ', '+')}"
+                    profile_url = f"https://www.last.fm/user/{user['username']}"
+                    
+                    description += f"[{user['username']}]({profile_url})\n"
+                    description += f"[{user['song']}]({track_url}) - [{user['artist']}]({artist_url})"
+                    
+                    if i < len(playing_users) - 1:
+                        description += "\n\n"
+                
+                # Add summary line with same spacing as header
+                description += "\n\n"
+                description += f"Users currently listening: {len(playing_users)} - Total users with LastFM: {len(lastfm_data)}"
+                embed.description = description
+            else:
+                embed.description = f"No one is currently listening to music\nTotal users with LastFM: {len(lastfm_data)}"
+                
+            await ctx.send(embed=embed)
+            
+        except Exception as e:
+            print(f"Error in servernowplaying: {str(e)}")
+            await ctx.send("An error occurred while fetching currently playing tracks.")
+
+    @commands.command()
+    async def logout(self, ctx):
+        user_id = ctx.author.id
+        try:
+            with open('data/lastfm.json', 'r') as f:
+                user_data = json.load(f)
+                
+            if str(user_id) not in user_data:
+                embed = discord.Embed(
+                    title="Not Logged In",
+                    description="You don't have a LastFM account linked.",
+                    color=discord.Color.red()
+                )
+                embed.set_footer(text=f"Requested by {ctx.author.name}", 
+                               icon_url=ctx.author.avatar.url if ctx.author.avatar else ctx.author.default_avatar.url)
+                await ctx.send(embed=embed)
+                return
+                
+            # Remove the user's data
+            del user_data[str(user_id)]
+            
+            # Save the updated data
+            with open('data/lastfm.json', 'w') as f:
+                json.dump(user_data, f)
+                
+            embed = discord.Embed(
+                title="LastFM Account Unlinked",
+                description="Your LastFM account has been unlinked from Leurs!",
+                color=discord.Color.green()
+            )
+            embed.set_footer(text=f"Requested by {ctx.author.name}", 
+                           icon_url=ctx.author.avatar.url if ctx.author.avatar else ctx.author.default_avatar.url)
+            await ctx.send(embed=embed)
+            
+        except Exception as e:
+            print(f"Error in logout: {str(e)}")
+            await ctx.send("An error occurred while trying to unlink your LastFM account.")
 
 async def setup(client):
     try:
