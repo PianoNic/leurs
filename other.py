@@ -663,3 +663,107 @@ class OtherCog(commands.Cog):
         except Exception:
             await ctx.send("An error occurred while creating the quote image.")
     
+    @commands.command(aliases=['av'])
+    async def avatar(self, ctx, member: discord.Member = None):
+        """Display a user's global avatar in high quality"""
+        # If no member is specified, use the command author
+        member = member or ctx.author
+        
+        # Create an embed with the avatar
+        embed = discord.Embed(
+            title=f"{member.display_name}'s Avatar",
+            color=0x00FFFF
+        )
+        
+        # Get the global avatar URL with maximum size (4096)
+        avatar_url = member.avatar.with_size(4096).url if member.avatar else member.default_avatar.url
+        
+        # Set the image in the embed
+        embed.set_image(url=avatar_url)
+        
+        await ctx.send(embed=embed)
+    
+    @commands.command(aliases=['sav'])
+    async def serveravatar(self, ctx, member: discord.Member = None):
+        """Display a user's server-specific avatar in high quality"""
+        # If no member is specified, use the command author
+        member = member or ctx.author
+        
+        # Check if the user has a server-specific avatar
+        if not member.guild_avatar:
+            await ctx.send(f"{member.display_name} doesn't have a server-specific avatar.")
+            return
+        
+        # Create an embed with the server avatar
+        embed = discord.Embed(
+            title=f"{member.display_name}'s Server Avatar",
+            color=0x00FFFF
+        )
+        
+        # Get the server avatar URL with maximum size (4096)
+        avatar_url = member.guild_avatar.with_size(4096).url
+        
+        # Set the image in the embed
+        embed.set_image(url=avatar_url)
+        
+        await ctx.send(embed=embed)
+    
+    @commands.command()
+    async def banner(self, ctx, user: discord.User = None):
+        """Display a user's banner in high quality"""
+        # If no user is specified, use the command author
+        user = user or ctx.author
+        
+        # Fetch the user to get the banner info
+        try:
+            user = await self.client.fetch_user(user.id)
+            
+            # Check if the user has a banner
+            if not user.banner:
+                await ctx.send(f"{user.display_name} doesn't have a banner.")
+                return
+            
+            # Create an embed with the banner
+            embed = discord.Embed(
+                title=f"{user.display_name}'s Banner",
+                color=0x00FFFF
+            )
+            
+            # Get the banner URL with maximum size (4096)
+            banner_url = user.banner.with_size(4096).url
+            
+            # Set the image in the embed
+            embed.set_image(url=banner_url)
+            
+            await ctx.send(embed=embed)
+        except Exception as e:
+            await ctx.send(f"Error fetching banner: {str(e)}")
+    
+    @commands.command()
+    async def sbanner(self, ctx, member: discord.Member = None):
+        """Display a user's server banner in high quality"""
+        # If no member is specified, use the command author
+        member = member or ctx.author
+        
+        try:
+            # Check if the user has a server banner
+            if not hasattr(member, 'guild_banner') or not member.guild_banner:
+                await ctx.send(f"{member.display_name} doesn't have a server banner.")
+                return
+            
+            # Create an embed with the server banner
+            embed = discord.Embed(
+                title=f"{member.display_name}'s Server Banner",
+                color=0x00FFFF
+            )
+            
+            # Get the server banner URL with maximum size (4096)
+            banner_url = member.guild_banner.with_size(4096).url
+            
+            # Set the image in the embed
+            embed.set_image(url=banner_url)
+            
+            await ctx.send(embed=embed)
+        except Exception as e:
+            await ctx.send(f"Error fetching server banner: {str(e)}")
+    
