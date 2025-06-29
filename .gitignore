@@ -41,6 +41,8 @@ config.json
 
 /data
 
+myenv/
+venv/
 # Python
 __pycache__/
 *.py[cod]
