@@ -106,57 +106,6 @@ async def help_command(ctx):
     
     await ctx.send(embed=embed)
 
-@client.command(name='inv')
-async def send_invite(ctx, member: discord.Member = None):
-    """Send a server invite to a mentioned user via DM"""
-    if not member:
-        embed = discord.Embed(
-            title="Error",
-            description="Please mention a user to send an invite to.",
-            color=discord.Color.red()
-        )
-        await ctx.send(embed=embed)
-        return
-
-    try:
-        # Create a single-use invite for the current channel
-        invite = await ctx.channel.create_invite(max_uses=1, unique=True)
-        
-        # Create embed for the DM
-        dm_embed = discord.Embed(
-            title=f"Invitation to {ctx.guild.name}",
-            description=f"{ctx.author.mention} has invited you to join **{ctx.guild.name}**!",
-            color=discord.Color.blue()
-        )
-        dm_embed.add_field(name="Server Invite", value=invite.url, inline=False)
-        
-        # Try to send the DM
-        await member.send(embed=dm_embed)
-        
-        # Confirm to the user that the invite was sent
-        confirm_embed = discord.Embed(
-            title="Invite Sent",
-            description=f"Invite successfully sent to {member.mention}.",
-            color=discord.Color.green()
-        )
-        await ctx.send(embed=confirm_embed)
-        
-    except discord.Forbidden:
-        # User has DMs disabled
-        error_embed = discord.Embed(
-            title="Error",
-            description=f"Couldn't send the invite to {member.mention}. They might have DMs disabled.",
-            color=discord.Color.red()
-        )
-        await ctx.send(embed=error_embed)
-    except Exception as e:
-        # Other errors
-        error_embed = discord.Embed(
-            title="Error",
-            description=f"An error occurred: {str(e)}",
-            color=discord.Color.red()
-        )
-        await ctx.send(embed=error_embed)
 
 @client.command(name='prefix')
 @commands.has_permissions(administrator=True)
