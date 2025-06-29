@@ -83,6 +83,81 @@ class CustomBot(commands.Bot):
 
 client = CustomBot(command_prefix=get_prefix, intents=intents)
 
+# Remove default help command
+client.remove_command('help')
+
+@client.command(name='help')
+async def help_command(ctx):
+    """Redirects to the documentation website"""
+    embed = discord.Embed(
+        title="Leurs Bot Documentation",
+        description="For a complete list of commands and their usage, please visit our documentation website:",
+        color=discord.Color.blue(),
+        url="https://docs.leurs.ch"
+    )
+    
+    embed.add_field(
+        name="Website",
+        value="[docs.leurs.ch](https://docs.leurs.ch)",
+        inline=False
+    )
+    
+    embed.set_footer(text="Click the link above to view all commands")
+    
+    await ctx.send(embed=embed)
+
+@client.command(name='inv')
+async def send_invite(ctx, member: discord.Member = None):
+    """Send a server invite to a mentioned user via DM"""
+    if not member:
+        embed = discord.Embed(
+            title="Error",
+            description="Please mention a user to send an invite to.",
+            color=discord.Color.red()
+        )
+        await ctx.send(embed=embed)
+        return
+
+    try:
+        # Create a single-use invite for the current channel
+        invite = await ctx.channel.create_invite(max_uses=1, unique=True)
+        
+        # Create embed for the DM
+        dm_embed = discord.Embed(
+            title=f"Invitation to {ctx.guild.name}",
+            description=f"{ctx.author.mention} has invited you to join **{ctx.guild.name}**!",
+            color=discord.Color.blue()
+        )
+        dm_embed.add_field(name="Server Invite", value=invite.url, inline=False)
+        
+        # Try to send the DM
+        await member.send(embed=dm_embed)
+        
+        # Confirm to the user that the invite was sent
+        confirm_embed = discord.Embed(
+            title="Invite Sent",
+            description=f"Invite successfully sent to {member.mention}.",
+            color=discord.Color.green()
+        )
+        await ctx.send(embed=confirm_embed)
+        
+    except discord.Forbidden:
+        # User has DMs disabled
+        error_embed = discord.Embed(
+            title="Error",
+            description=f"Couldn't send the invite to {member.mention}. They might have DMs disabled.",
+            color=discord.Color.red()
+        )
+        await ctx.send(embed=error_embed)
+    except Exception as e:
+        # Other errors
+        error_embed = discord.Embed(
+            title="Error",
+            description=f"An error occurred: {str(e)}",
+            color=discord.Color.red()
+        )
+        await ctx.send(embed=error_embed)
+
 @client.command(name='prefix')
 @commands.has_permissions(administrator=True)
 async def change_prefix(ctx, new_prefix: str):

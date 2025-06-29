@@ -29,6 +29,9 @@ class AdminCog(commands.Cog):
         self.roles_file = self.data_dir / "saved_roles.json"
         self.roles_info_file = self.data_dir / "roles_info.json"
         
+        # Nickname history file path
+        self.nickname_file = self.data_dir / "nickname_history.json"
+        
         # Initialize role saving task
         self.role_save_task = None
         self.last_save_time = None
@@ -36,6 +39,9 @@ class AdminCog(commands.Cog):
         
         # Load role save info if exists
         self.load_role_save_info()
+        
+        # Initialize nickname history
+        self.load_nickname_history()
 
     def cog_unload(self):
         # Cancel the role save task when the cog is unloaded
@@ -46,6 +52,345 @@ class AdminCog(commands.Cog):
         # Start the role save task when the cog is loaded
         self.role_save_task = self.client.loop.create_task(self.role_save_loop())
 
+    # Load nickname history from file
+    def load_nickname_history(self):
+        """Load nickname history from JSON file"""
+        try:
+            if os.path.exists(self.nickname_file):
+                with open(self.nickname_file, 'r') as f:
+                    return json.load(f)
+            else:
+                # Create empty nickname history file
+                with open(self.nickname_file, 'w') as f:
+                    json.dump({}, f)
+                return {}
+        except Exception as e:
+            print(f"Error loading nickname history: {e}")
+            return {}
+            
+    # Save nickname history to file
+    def save_nickname_history(self, history):
+        """Save nickname history to JSON file"""
+        try:
+            with open(self.nickname_file, 'w') as f:
+                json.dump(history, f, indent=2)
+            return True
+        except Exception as e:
+            print(f"Error saving nickname history: {e}")
+            return False
+            
+    # Add nickname change to history
+    async def add_nickname_change(self, guild_id, user_id, old_nick, new_nick):
+        """Add a nickname change to the history"""
+        try:
+            # Load current history
+            history = self.load_nickname_history()
+            
+            # Initialize guild section if not exists
+            guild_id_str = str(guild_id)
+            if guild_id_str not in history:
+                history[guild_id_str] = {}
+                
+            # Initialize user section if not exists
+            user_id_str = str(user_id)
+            if user_id_str not in history[guild_id_str]:
+                history[guild_id_str][user_id_str] = []
+                
+            # Add new nickname change with timestamp
+            history[guild_id_str][user_id_str].append({
+                "old_nick": old_nick,
+                "new_nick": new_nick,
+                "timestamp": datetime.utcnow().isoformat()
+            })
+            
+            # Save updated history
+            self.save_nickname_history(history)
+            return True
+        except Exception as e:
+            print(f"Error adding nickname change: {e}")
+            return False
+
+    # Get previous nickname from history
+    async def get_previous_nickname(self, guild_id, user_id):
+        """Get the previous nickname for a user"""
+        try:
+            # Load current history
+            history = self.load_nickname_history()
+            
+            # Check if we have history for this user in this guild
+            guild_id_str = str(guild_id)
+            user_id_str = str(user_id)
+            
+            if (guild_id_str in history and 
+                user_id_str in history[guild_id_str] and 
+                len(history[guild_id_str][user_id_str]) > 0):
+                
+                # Get the most recent nickname change
+                changes = history[guild_id_str][user_id_str]
+                if changes:
+                    return changes[-1]["old_nick"]
+            
+            return None
+        except Exception as e:
+            print(f"Error getting previous nickname: {e}")
+            return None
+
+    @commands.command()
+    @has_permissions(administrator=True)
+    async def nick(self, ctx, member: discord.Member = None, *, new_nickname = None):
+        """Change a user's nickname (Admin only)
+        
+        Usage:
+        !nick @user New Nickname - Change another user's nickname
+        !nick New Nickname - Change your own nickname
+        """
+        # If no member is specified, use the command author
+        if member is None and new_nickname is None:
+            raise commands.CommandError("Please provide a nickname.")
+            
+        # If only one argument is provided, it's the new nickname for the author
+        if new_nickname is None:
+            new_nickname = str(member)
+            member = ctx.author
+            
+        try:
+            # Store the old nickname before changing
+            old_nickname = member.nick or member.name
+            
+            # Change the nickname
+            await member.edit(nick=new_nickname)
+            
+            # Add to nickname history
+            await self.add_nickname_change(ctx.guild.id, member.id, old_nickname, new_nickname)
+            
+            embed = discord.Embed(
+                title="Nickname Changed",
+                description=f"Changed {member.mention}'s nickname to: **{new_nickname}**",
+                color=discord.Color.green()
+            )
+            await ctx.send(embed=embed)
+            
+        except discord.Forbidden:
+            raise commands.CommandError("I don't have permission to change that user's nickname.")
+        except discord.HTTPException as e:
+            raise commands.CommandError(f"Failed to change nickname: {str(e)}")
+
+    @commands.command()
+    @has_permissions(administrator=True)
+    async def nickremove(self, ctx, member: discord.Member = None):
+        """Remove a user's nickname (Admin only)
+        
+        Usage:
+        !nickremove @user - Remove another user's nickname
+        !nickremove - Remove your own nickname
+        """
+        # If no member is specified, use the command author
+        if member is None:
+            member = ctx.author
+            
+        try:
+            # Store the old nickname before removing
+            old_nickname = member.nick or member.name
+            
+            # Remove the nickname by setting it to None
+            await member.edit(nick=None)
+            
+            # Add to nickname history
+            await self.add_nickname_change(ctx.guild.id, member.id, old_nickname, None)
+            
+            embed = discord.Embed(
+                title="Nickname Removed",
+                description=f"Removed {member.mention}'s nickname. They are now displayed as: **{member.name}**",
+                color=discord.Color.green()
+            )
+            await ctx.send(embed=embed)
+            
+        except discord.Forbidden:
+            raise commands.CommandError("I don't have permission to change that user's nickname.")
+        except discord.HTTPException as e:
+            raise commands.CommandError(f"Failed to remove nickname: {str(e)}")
+
+    @commands.command()
+    @has_permissions(administrator=True)
+    async def nickrevert(self, ctx, member: discord.Member = None):
+        """Revert a user's nickname to their previous one (Admin only)
+        
+        Usage:
+        !nickrevert @user - Revert another user's nickname
+        !nickrevert - Revert your own nickname
+        """
+        # If no member is specified, use the command author
+        if member is None:
+            member = ctx.author
+            
+        try:
+            # Get the previous nickname
+            previous_nickname = await self.get_previous_nickname(ctx.guild.id, member.id)
+            
+            if previous_nickname is None:
+                raise commands.CommandError(f"No previous nickname found for {member.mention}.")
+                
+            # Store the current nickname before changing
+            current_nickname = member.nick or member.name
+            
+            # Change the nickname to the previous one
+            await member.edit(nick=previous_nickname)
+            
+            # Add to nickname history
+            await self.add_nickname_change(ctx.guild.id, member.id, current_nickname, previous_nickname)
+            
+            embed = discord.Embed(
+                title="Nickname Reverted",
+                description=f"Reverted {member.mention}'s nickname to: **{previous_nickname}**",
+                color=discord.Color.green()
+            )
+            await ctx.send(embed=embed)
+            
+        except discord.Forbidden:
+            raise commands.CommandError("I don't have permission to change that user's nickname.")
+        except discord.HTTPException as e:
+            raise commands.CommandError(f"Failed to revert nickname: {str(e)}")
+
+    @nick.error
+    @nickremove.error
+    @nickrevert.error
+    async def nickname_command_error(self, ctx, error):
+        if isinstance(error, commands.MissingPermissions):
+            embed = discord.Embed(
+                title="Permission Denied",
+                description="You don't have permission to use this command.",
+                color=discord.Color.red()
+            )
+            await ctx.send(embed=embed)
+            return True
+        elif isinstance(error, commands.MemberNotFound):
+            embed = discord.Embed(
+                title="Error",
+                description="Member not found.",
+                color=discord.Color.red()
+            )
+            await ctx.send(embed=embed)
+            return True
+        elif isinstance(error, commands.CommandError):
+            embed = discord.Embed(
+                title="Error",
+                description=str(error),
+                color=discord.Color.red()
+            )
+            await ctx.send(embed=embed)
+            return True
+        return False
+        
+    @commands.command()
+    async def nickme(self, ctx, *, new_nickname=None):
+        """Change your own nickname
+        
+        Usage:
+        !nickme New Nickname - Change your own nickname
+        """
+        if new_nickname is None:
+            raise commands.CommandError("Please provide a new nickname.")
+            
+        try:
+            # Store the old nickname before changing
+            old_nickname = ctx.author.nick or ctx.author.name
+            
+            # Change the nickname
+            await ctx.author.edit(nick=new_nickname)
+            
+            # Add to nickname history
+            await self.add_nickname_change(ctx.guild.id, ctx.author.id, old_nickname, new_nickname)
+            
+            embed = discord.Embed(
+                title="Nickname Changed",
+                description=f"Changed your nickname to: **{new_nickname}**",
+                color=discord.Color.green()
+            )
+            await ctx.send(embed=embed)
+            
+        except discord.Forbidden:
+            raise commands.CommandError("I don't have permission to change your nickname.")
+        except discord.HTTPException as e:
+            raise commands.CommandError(f"Failed to change nickname: {str(e)}")
+            
+    @commands.command()
+    async def nickmeremove(self, ctx):
+        """Remove your own nickname
+        
+        Usage:
+        !nickmeremove - Remove your own nickname
+        """
+        try:
+            # Store the old nickname before removing
+            old_nickname = ctx.author.nick or ctx.author.name
+            
+            # Remove the nickname by setting it to None
+            await ctx.author.edit(nick=None)
+            
+            # Add to nickname history
+            await self.add_nickname_change(ctx.guild.id, ctx.author.id, old_nickname, None)
+            
+            embed = discord.Embed(
+                title="Nickname Removed",
+                description=f"Removed your nickname. You are now displayed as: **{ctx.author.name}**",
+                color=discord.Color.green()
+            )
+            await ctx.send(embed=embed)
+            
+        except discord.Forbidden:
+            raise commands.CommandError("I don't have permission to change your nickname.")
+        except discord.HTTPException as e:
+            raise commands.CommandError(f"Failed to remove nickname: {str(e)}")
+            
+    @commands.command()
+    async def nickmerevert(self, ctx):
+        """Revert your nickname to your previous one
+        
+        Usage:
+        !nickmerevert - Revert your own nickname
+        """
+        try:
+            # Get the previous nickname
+            previous_nickname = await self.get_previous_nickname(ctx.guild.id, ctx.author.id)
+            
+            if previous_nickname is None:
+                raise commands.CommandError("No previous nickname found for you.")
+                
+            # Store the current nickname before changing
+            current_nickname = ctx.author.nick or ctx.author.name
+            
+            # Change the nickname to the previous one
+            await ctx.author.edit(nick=previous_nickname)
+            
+            # Add to nickname history
+            await self.add_nickname_change(ctx.guild.id, ctx.author.id, current_nickname, previous_nickname)
+            
+            embed = discord.Embed(
+                title="Nickname Reverted",
+                description=f"Reverted your nickname to: **{previous_nickname}**",
+                color=discord.Color.green()
+            )
+            await ctx.send(embed=embed)
+            
+        except discord.Forbidden:
+            raise commands.CommandError("I don't have permission to change your nickname.")
+        except discord.HTTPException as e:
+            raise commands.CommandError(f"Failed to revert nickname: {str(e)}")
+            
+    @nickme.error
+    @nickmeremove.error
+    @nickmerevert.error
+    async def nickme_command_error(self, ctx, error):
+        if isinstance(error, commands.CommandError):
+            embed = discord.Embed(
+                title="Error",
+                description=str(error),
+                color=discord.Color.red()
+            )
+            await ctx.send(embed=embed)
+            return True
+        return False
+        
     async def role_save_loop(self):
         """Loop that saves roles every 6 hours"""
         await self.client.wait_until_ready()
