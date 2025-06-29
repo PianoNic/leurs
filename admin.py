@@ -6,7 +6,7 @@ import asyncio
 import re
 from discord.ext.commands import has_permissions
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 from collections import defaultdict
 import pathlib
 
@@ -24,6 +24,256 @@ class AdminCog(commands.Cog):
         self.message_index_file = self.data_dir / "message_index.json"
         self.last_scan_file = self.data_dir / "last_scan.txt"
         self.word_index = defaultdict(list)  # In-memory index for faster searching
+        
+        # Role saver file paths
+        self.roles_file = self.data_dir / "saved_roles.json"
+        self.roles_info_file = self.data_dir / "roles_info.json"
+        
+        # Initialize role saving task
+        self.role_save_task = None
+        self.last_save_time = None
+        self.next_save_time = None
+        
+        # Load role save info if exists
+        self.load_role_save_info()
+
+    def cog_unload(self):
+        # Cancel the role save task when the cog is unloaded
+        if self.role_save_task:
+            self.role_save_task.cancel()
+            
+    async def cog_load(self):
+        # Start the role save task when the cog is loaded
+        self.role_save_task = self.client.loop.create_task(self.role_save_loop())
+
+    async def role_save_loop(self):
+        """Loop that saves roles every 6 hours"""
+        await self.client.wait_until_ready()
+        while not self.client.is_closed():
+            try:
+                # Save roles for all guilds
+                for guild in self.client.guilds:
+                    await self.save_roles(guild)
+                
+                # Update save times
+                self.last_save_time = datetime.utcnow()
+                self.next_save_time = self.last_save_time + timedelta(hours=6)
+                self.save_role_save_info()
+                
+                # Wait for 6 hours
+                await asyncio.sleep(6 * 60 * 60)  # 6 hours in seconds
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                print(f"Error in role save loop: {e}")
+                # Wait a bit before retrying if there was an error
+                await asyncio.sleep(300)  # 5 minutes
+
+    async def save_roles(self, guild):
+        """Save roles for all members in a guild"""
+        try:
+            # Load existing saved roles if any
+            saved_roles = {}
+            if os.path.exists(self.roles_file):
+                with open(self.roles_file, 'r') as f:
+                    saved_roles = json.load(f)
+            
+            # Initialize guild section if not exists
+            if str(guild.id) not in saved_roles:
+                saved_roles[str(guild.id)] = {}
+            
+            # Save roles for each member
+            for member in guild.members:
+                # Skip bots
+                if member.bot:
+                    continue
+                    
+                # Save role IDs for the member
+                role_ids = [role.id for role in member.roles if role.id != guild.default_role.id]
+                saved_roles[str(guild.id)][str(member.id)] = role_ids
+            
+            # Save to file
+            with open(self.roles_file, 'w') as f:
+                json.dump(saved_roles, f, indent=2)
+                
+            return True
+        except Exception as e:
+            print(f"Error saving roles: {e}")
+            return False
+
+    def load_role_save_info(self):
+        """Load role save timing information"""
+        try:
+            if os.path.exists(self.roles_info_file):
+                with open(self.roles_info_file, 'r') as f:
+                    info = json.load(f)
+                    
+                if 'last_save' in info:
+                    self.last_save_time = datetime.fromisoformat(info['last_save'])
+                if 'next_save' in info:
+                    self.next_save_time = datetime.fromisoformat(info['next_save'])
+        except Exception as e:
+            print(f"Error loading role save info: {e}")
+            # Set default times if loading fails
+            self.last_save_time = None
+            self.next_save_time = datetime.utcnow() + timedelta(hours=6)
+
+    def save_role_save_info(self):
+        """Save role save timing information"""
+        try:
+            info = {
+                'last_save': self.last_save_time.isoformat() if self.last_save_time else None,
+                'next_save': self.next_save_time.isoformat() if self.next_save_time else None
+            }
+            
+            with open(self.roles_info_file, 'w') as f:
+                json.dump(info, f, indent=2)
+        except Exception as e:
+            print(f"Error saving role save info: {e}")
+
+    @commands.Cog.listener()
+    async def on_member_join(self, member):
+        """Restore roles when a member rejoins the server"""
+        # Skip bots
+        if member.bot:
+            return
+            
+        try:
+            # Check if we have saved roles for this member
+            if not os.path.exists(self.roles_file):
+                return
+                
+            with open(self.roles_file, 'r') as f:
+                saved_roles = json.load(f)
+            
+            guild_id = str(member.guild.id)
+            member_id = str(member.id)
+            
+            # Check if we have roles saved for this member in this guild
+            if guild_id in saved_roles and member_id in saved_roles[guild_id]:
+                role_ids = saved_roles[guild_id][member_id]
+                
+                # Get valid roles that still exist in the server
+                roles_to_add = []
+                for role_id in role_ids:
+                    role = member.guild.get_role(int(role_id))
+                    if role and not role.managed:  # Skip managed roles (bots, integrations)
+                        roles_to_add.append(role)
+                
+                # Add roles if any
+                if roles_to_add:
+                    await member.add_roles(*roles_to_add, reason="Restoring saved roles")
+                    
+                    # Log in system channel if available
+                    system_channel = member.guild.system_channel
+                    if system_channel:
+                        role_mentions = [role.mention for role in roles_to_add]
+                        role_list = ", ".join(role_mentions) if role_mentions else "None"
+                        
+                        embed = discord.Embed(
+                            title="Roles Restored",
+                            description=f"Restored roles for {member.mention}: {role_list}",
+                            color=discord.Color.green()
+                        )
+                        await system_channel.send(embed=embed)
+        except Exception as e:
+            print(f"Error restoring roles: {e}")
+
+    @commands.command()
+    @has_permissions(administrator=True)
+    async def saveroles(self, ctx, option: str = None):
+        """Save roles for all members or show save info
+        
+        Usage:
+        !saveroles - Save roles now
+        !saveroles info - Show last and next save times
+        """
+        if option and option.lower() == "info":
+            # Show save info
+            if not self.last_save_time:
+                last_save_str = "Never"
+            else:
+                # Format as relative time
+                time_diff = datetime.utcnow() - self.last_save_time
+                hours, remainder = divmod(time_diff.seconds, 3600)
+                minutes, _ = divmod(remainder, 60)
+                if time_diff.days > 0:
+                    last_save_str = f"{time_diff.days} days, {hours} hours ago"
+                elif hours > 0:
+                    last_save_str = f"{hours} hours, {minutes} minutes ago"
+                else:
+                    last_save_str = f"{minutes} minutes ago"
+            
+            if not self.next_save_time:
+                next_save_str = "Not scheduled"
+            else:
+                # Format as relative time
+                time_diff = self.next_save_time - datetime.utcnow()
+                hours, remainder = divmod(time_diff.seconds, 3600)
+                minutes, _ = divmod(remainder, 60)
+                if time_diff.days > 0:
+                    next_save_str = f"In {time_diff.days} days, {hours} hours"
+                elif hours > 0:
+                    next_save_str = f"In {hours} hours, {minutes} minutes"
+                else:
+                    next_save_str = f"In {minutes} minutes"
+            
+            embed = discord.Embed(
+                title="Role Save Information",
+                description="Status of the automatic role saving system",
+                color=discord.Color.blue()
+            )
+            embed.add_field(name="Last Save", value=last_save_str, inline=False)
+            embed.add_field(name="Next Save", value=next_save_str, inline=False)
+            
+            await ctx.send(embed=embed)
+        else:
+            # Save roles now
+            status_msg = await ctx.send(embed=discord.Embed(
+                title="Saving Roles",
+                description="Saving roles for all members...",
+                color=discord.Color.blue()
+            ))
+            
+            success = await self.save_roles(ctx.guild)
+            
+            if success:
+                # Update save times
+                self.last_save_time = datetime.utcnow()
+                self.next_save_time = self.last_save_time + timedelta(hours=6)
+                self.save_role_save_info()
+                
+                await status_msg.edit(embed=discord.Embed(
+                    title="Roles Saved",
+                    description=f"Successfully saved roles for all members in {ctx.guild.name}",
+                    color=discord.Color.green()
+                ))
+            else:
+                await status_msg.edit(embed=discord.Embed(
+                    title="Error",
+                    description="Failed to save roles. Check console for details.",
+                    color=discord.Color.red()
+                ))
+
+    @saveroles.error
+    async def saveroles_error(self, ctx, error):
+        if isinstance(error, commands.MissingPermissions):
+            embed = discord.Embed(
+                title="Permission Denied",
+                description="You don't have permission to use this command.",
+                color=discord.Color.red()
+            )
+            await ctx.send(embed=embed)
+            return True
+        elif isinstance(error, commands.CommandError):
+            embed = discord.Embed(
+                title="Error",
+                description=str(error),
+                color=discord.Color.red()
+            )
+            await ctx.send(embed=embed)
+            return True
+        return False
 
     @commands.command()
     @has_permissions(administrator=True)
