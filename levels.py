@@ -334,14 +334,14 @@ class LevelsCog(commands.Cog):
             # Sort by level first, then by XP (both descending)
             user_list.sort(key=lambda x: (x["level"], x["xp"]), reverse=True)
             
-            # Paginate results (10 per page)
-            total_pages = max(1, math.ceil(len(user_list) / 10))
+            # Paginate results (5 per page)
+            total_pages = max(1, math.ceil(len(user_list) / 5))
             
             # Ensure page is within valid range
             page = max(1, min(page, total_pages))
             
-            start_idx = (page - 1) * 10
-            end_idx = min(start_idx + 10, len(user_list))
+            start_idx = (page - 1) * 5
+            end_idx = min(start_idx + 5, len(user_list))
             
             # Create embed
             embed = discord.Embed(
@@ -359,18 +359,40 @@ class LevelsCog(commands.Cog):
                 
                 for idx, user_data in enumerate(user_list[start_idx:end_idx], start=start_idx + 1):
                     member = user_data["member"]
-                    position = idx - 1
+                    user_id = user_data["id"]
+                    position = idx - 1 + start_idx  # Zero-based position
                     
                     # Get appropriate emoji based on rank
                     prefix = rank_emoji.get(position, f"{idx}.")
                     
+                    # Get the name and icon url
+                    if member:
+                        name = member.name
+                        icon_url = member.avatar.url if member.avatar else member.default_avatar.url
+                    else:
+                        # Try to fetch user info from Discord
+                        try:
+                            user = await self.client.fetch_user(int(user_id))
+                            name = user.name
+                            icon_url = user.avatar.url if user.avatar else user.default_avatar.url
+                        except:
+                            # If all else fails, use a generic name
+                            name = f"User-{user_id[-4:]}"
+                            icon_url = None
+                    
                     # Create embed field
-                    field_name = f"{prefix} {member.name}"
-                    field_value = f"Level: **{user_data['level']}**\nTotal XP: **{user_data['xp']:,}**\nMessages: **{user_data['total_messages']:,}**"
+                    field_name = f"{prefix} {name}"
+                    field_value = f"Level: **{user_data['level']}**\nXP: **{user_data['xp']}**\nMessages: **{user_data['total_messages']}**"
                     
                     embed.add_field(name=field_name, value=field_value, inline=False)
+                    
+                    # Show first-place user as thumbnail
+                    if position == 0 and icon_url:
+                        embed.set_thumbnail(url=icon_url)
             
-            embed.set_footer(text=f"Page {page}/{total_pages}")
+            embed.set_footer(text=f"Page {page}/{total_pages} • Requested by {ctx.author.name}", 
+                             icon_url=ctx.author.avatar.url if ctx.author.avatar else ctx.author.default_avatar.url)
+            embed.timestamp = datetime.datetime.utcnow()
             
             # Create view with navigation buttons if needed
             if total_pages > 1:
@@ -471,9 +493,29 @@ class LevelsCog(commands.Cog):
                         name = f"User-{user_id[-4:]}"
                         icon_url = None
                 
+                # Format voice time into days, hours, minutes, seconds
+                total_seconds = int(user_data["voice_time"])
+                days = total_seconds // 86400
+                hours = (total_seconds % 86400) // 3600
+                minutes = (total_seconds % 3600) // 60
+                seconds = total_seconds % 60
+                
+                # Build time string
+                time_parts = []
+                if days > 0:
+                    time_parts.append(f"{days}d")
+                if hours > 0:
+                    time_parts.append(f"{hours}h")
+                if minutes > 0:
+                    time_parts.append(f"{minutes}m")
+                if seconds > 0 or not time_parts:  # Include seconds if non-zero or if no other units
+                    time_parts.append(f"{seconds}s")
+                
+                time_str = " ".join(time_parts)
+                
                 # Create embed field
                 field_name = f"{prefix} {name}"
-                field_value = f"Time in Voice: **{user_data['voice_time']}**"
+                field_value = f"Time in Voice: **{time_str}**"
                 
                 embed.add_field(name=field_name, value=field_value, inline=False)
                 
@@ -722,14 +764,14 @@ class LevelLeaderboardView(discord.ui.View):
         # Sort by level first, then by XP (both descending)
         user_list.sort(key=lambda x: (x["level"], x["xp"]), reverse=True)
         
-        # Paginate results (10 per page)
-        total_pages = max(1, math.ceil(len(user_list) / 10))
+        # Paginate results (5 per page)
+        total_pages = max(1, math.ceil(len(user_list) / 5))
         
         # Ensure page is within valid range
         new_page = max(1, min(new_page, total_pages))
         
-        start_idx = (new_page - 1) * 10
-        end_idx = min(start_idx + 10, len(user_list))
+        start_idx = (new_page - 1) * 5
+        end_idx = min(start_idx + 5, len(user_list))
         
         # Create embed
         embed = discord.Embed(

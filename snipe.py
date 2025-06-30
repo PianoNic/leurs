@@ -144,4 +144,4 @@ class SnipeCog(commands.Cog, name="snipe"):
         await ctx.message.add_reaction('✅')
 
 async def setup(bot):
-    await bot.add_cog(SnipeCog(bot)) 
+    await bot.add_cog(SnipeCog(bot))  

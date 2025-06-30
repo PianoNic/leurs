@@ -83,6 +83,30 @@ class CustomBot(commands.Bot):
 
 client = CustomBot(command_prefix=get_prefix, intents=intents)
 
+# Remove default help command
+client.remove_command('help')
+
+@client.command(name='help')
+async def help_command(ctx):
+    """Redirects to the documentation website"""
+    embed = discord.Embed(
+        title="Leurs Bot Documentation",
+        description="For a complete list of commands and their usage, please visit our documentation website:",
+        color=discord.Color.blue(),
+        url="https://docs.leurs.ch"
+    )
+    
+    embed.add_field(
+        name="Website",
+        value="[docs.leurs.ch](https://docs.leurs.ch)",
+        inline=False
+    )
+    
+    embed.set_footer(text="Click the link above to view all commands")
+    
+    await ctx.send(embed=embed)
+
+
 @client.command(name='prefix')
 @commands.has_permissions(administrator=True)
 async def change_prefix(ctx, new_prefix: str):
