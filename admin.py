@@ -38,6 +38,12 @@ class AdminCog(commands.Cog):
         # Reaction roles file path
         self.reaction_roles_file = self.data_dir / "reaction_roles.json"
         
+        # Warnings file path
+        self.warnings_file = self.data_dir / "warnings.json"
+        
+        # User actions file path
+        self.user_actions_file = self.data_dir / "user_actions.json"
+        
         # Initialize role saving task
         self.role_save_task = None
         self.last_save_time = None
@@ -54,6 +60,12 @@ class AdminCog(commands.Cog):
         
         # Initialize reaction roles
         self.reaction_roles = self.load_reaction_roles()
+        
+        # Initialize warnings
+        self.warnings = self.load_warnings()
+        
+        # Initialize user actions
+        self.user_actions = self.load_user_actions()
 
     def cog_unload(self):
         # Cancel the role save task when the cog is unloaded
@@ -63,6 +75,307 @@ class AdminCog(commands.Cog):
     async def cog_load(self):
         # Start the role save task when the cog is loaded
         self.role_save_task = self.client.loop.create_task(self.role_save_loop())
+
+    # Load user actions from file
+    def load_user_actions(self):
+        """Load user actions from JSON file"""
+        try:
+            if os.path.exists(self.user_actions_file):
+                with open(self.user_actions_file, 'r') as f:
+                    return json.load(f)
+            else:
+                # Create empty user actions file
+                with open(self.user_actions_file, 'w') as f:
+                    json.dump({}, f)
+                return {}
+        except Exception as e:
+            print(f"Error loading user actions: {e}")
+            return {}
+            
+    # Save user actions to file
+    def save_user_actions(self):
+        """Save user actions to JSON file"""
+        try:
+            with open(self.user_actions_file, 'w') as f:
+                json.dump(self.user_actions, f, indent=2)
+            return True
+        except Exception as e:
+            print(f"Error saving user actions: {e}")
+            return False
+            
+    # Add action to user history
+    async def add_user_action(self, guild_id, user_id, action_type, reason=None, duration=None):
+        """Add an admin action to the user's history"""
+        try:
+            # Load current actions
+            if not self.user_actions:
+                self.user_actions = self.load_user_actions()
+            
+            # Initialize guild section if not exists
+            guild_id_str = str(guild_id)
+            if guild_id_str not in self.user_actions:
+                self.user_actions[guild_id_str] = {}
+                
+            # Initialize user section if not exists
+            user_id_str = str(user_id)
+            if user_id_str not in self.user_actions[guild_id_str]:
+                self.user_actions[guild_id_str][user_id_str] = []
+                
+            # Add new action with timestamp
+            action = {
+                "action": action_type,
+                "timestamp": datetime.utcnow().isoformat()
+            }
+            
+            if reason:
+                action["reason"] = reason
+                
+            if duration:
+                action["duration"] = duration
+                
+            self.user_actions[guild_id_str][user_id_str].append(action)
+            
+            # Save updated actions
+            self.save_user_actions()
+            return True
+        except Exception as e:
+            print(f"Error adding user action: {e}")
+            return False
+
+    # Load warnings from file
+    def load_warnings(self):
+        """Load warnings from JSON file"""
+        try:
+            if os.path.exists(self.warnings_file):
+                with open(self.warnings_file, 'r') as f:
+                    return json.load(f)
+            else:
+                # Create empty warnings file
+                with open(self.warnings_file, 'w') as f:
+                    json.dump({}, f)
+                return {}
+        except Exception as e:
+            print(f"Error loading warnings: {e}")
+            return {}
+            
+    # Save warnings to file
+    def save_warnings(self):
+        """Save warnings to JSON file"""
+        try:
+            with open(self.warnings_file, 'w') as f:
+                json.dump(self.warnings, f, indent=2)
+            return True
+        except Exception as e:
+            print(f"Error saving warnings: {e}")
+            return False
+            
+    # Add warning to history
+    async def add_warning(self, guild_id, user_id, reason):
+        """Add a warning to the history"""
+        try:
+            # Load current warnings
+            if not self.warnings:
+                self.warnings = self.load_warnings()
+            
+            # Initialize guild section if not exists
+            guild_id_str = str(guild_id)
+            if guild_id_str not in self.warnings:
+                self.warnings[guild_id_str] = {}
+                
+            # Initialize user section if not exists
+            user_id_str = str(user_id)
+            if user_id_str not in self.warnings[guild_id_str]:
+                self.warnings[guild_id_str][user_id_str] = []
+                
+            # Add new warning with timestamp
+            self.warnings[guild_id_str][user_id_str].append({
+                "reason": reason,
+                "timestamp": datetime.utcnow().isoformat()
+            })
+            
+            # Save updated warnings
+            self.save_warnings()
+            return True
+        except Exception as e:
+            print(f"Error adding warning: {e}")
+            return False
+
+    @commands.command()
+    @has_permissions(administrator=True)
+    async def warn(self, ctx, member: discord.Member, *, reason=None):
+        """Warn a user and send them a DM (Admin only)
+        
+        Usage:
+        !warn @user [reason] - Warns the user and sends them a DM with the reason
+        """
+        if reason is None:
+            reason = "No reason provided"
+            
+        try:
+            # Add warning to history
+            await self.add_warning(ctx.guild.id, member.id, reason)
+            
+            # Add to user actions - REMOVED to prevent double counting
+            # await self.add_user_action(ctx.guild.id, member.id, "warn", reason)
+            
+            # Create DM embed
+            dm_embed = discord.Embed(
+                title="Warning",
+                description=f"You have been warned in **{ctx.guild.name}**",
+                color=discord.Color.yellow()
+            )
+            dm_embed.add_field(name="Reason", value=reason, inline=False)
+            dm_embed.set_footer(text=f"Time: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')}")
+            
+            # Send DM to user
+            try:
+                await member.send(embed=dm_embed)
+                dm_sent = True
+            except discord.Forbidden:
+                dm_sent = False
+                
+            # Create confirmation embed for the channel
+            channel_embed = discord.Embed(
+                title="User Warned",
+                description=f"{member.mention} has been warned.",
+                color=discord.Color.yellow()
+            )
+            channel_embed.add_field(name="Reason", value=reason, inline=False)
+            
+            if not dm_sent:
+                channel_embed.add_field(name="Note", value="Could not send DM to user (DMs disabled)", inline=False)
+                
+            await ctx.send(embed=channel_embed)
+            
+        except Exception as e:
+            raise commands.CommandError(f"Failed to warn user: {str(e)}")
+
+    @commands.command(aliases=["o"])
+    @has_permissions(administrator=True)
+    async def overview(self, ctx, member: discord.Member):
+        """Show an overview of admin actions taken against a user
+        
+        Usage:
+        !overview @user - Shows all warnings, bans, kicks, mutes, jails, etc. for the user
+        !o @user - Alias for overview command
+        """
+        try:
+            guild_id_str = str(ctx.guild.id)
+            user_id_str = str(member.id)
+            
+            # Create embed
+            embed = discord.Embed(
+                title=f"User Overview: {member.display_name}",
+                description=f"History of admin actions for {member.mention}",
+                color=discord.Color.blue()
+            )
+            
+            # Add user info
+            embed.add_field(name="User ID", value=member.id, inline=True)
+            embed.add_field(name="Account Created", value=member.created_at.strftime("%Y-%m-%d"), inline=True)
+            embed.add_field(name="Joined Server", value=member.joined_at.strftime("%Y-%m-%d") if member.joined_at else "Unknown", inline=True)
+            
+            # Get warnings count
+            warnings_count = 0
+            if guild_id_str in self.warnings and user_id_str in self.warnings[guild_id_str]:
+                warnings_count = len(self.warnings[guild_id_str][user_id_str])
+            
+            # Get user actions
+            action_counts = {"ban": 0, "kick": 0, "mute": 0, "jail": 0, "warn": 0}
+            recent_actions = []
+            
+            if guild_id_str in self.user_actions and user_id_str in self.user_actions[guild_id_str]:
+                actions = self.user_actions[guild_id_str][user_id_str]
+                
+                # Count actions by type
+                for action in actions:
+                    action_type = action["action"]
+                    if action_type in action_counts:
+                        action_counts[action_type] += 1
+                    else:
+                        action_counts[action_type] = 1
+                
+                # Get 5 most recent actions
+                sorted_actions = sorted(actions, key=lambda x: x["timestamp"], reverse=True)
+                recent_actions = sorted_actions[:5]
+            
+            # Set warnings count from warnings file (not from user_actions)
+            action_counts["warn"] = warnings_count
+            
+            # Add action counts to embed
+            action_summary = "\n".join([f"**{action.title()}s:** {count}" for action, count in action_counts.items() if count > 0])
+            if action_summary:
+                embed.add_field(name="Action Summary", value=action_summary, inline=False)
+            else:
+                embed.add_field(name="Action Summary", value="No actions recorded", inline=False)
+            
+            # Add recent actions to embed
+            if recent_actions:
+                recent_list = []
+                for action in recent_actions:
+                    action_time = datetime.fromisoformat(action["timestamp"])
+                    time_str = action_time.strftime("%Y-%m-%d %H:%M")
+                    reason = action.get("reason", "No reason provided")
+                    duration = f" ({action['duration']})" if "duration" in action else ""
+                    
+                    recent_list.append(f"**{action['action'].title()}**{duration} - {time_str}\n> {reason}")
+                
+                embed.add_field(name="Recent Actions", value="\n\n".join(recent_list), inline=False)
+            
+            # Add warnings detail if any
+            if warnings_count > 0:
+                warnings = self.warnings[guild_id_str][user_id_str]
+                sorted_warnings = sorted(warnings, key=lambda x: x["timestamp"], reverse=True)
+                
+                # Only show up to 5 most recent warnings
+                warnings_to_show = sorted_warnings[:5]
+                warnings_list = []
+                
+                for i, warning in enumerate(warnings_to_show, 1):
+                    warning_time = datetime.fromisoformat(warning["timestamp"])
+                    time_str = warning_time.strftime("%Y-%m-%d %H:%M")
+                    reason = warning.get("reason", "No reason provided")
+                    
+                    warnings_list.append(f"**Warning {i}/{warnings_count}** - {time_str}\n> {reason}")
+                
+                if warnings_count > 5:
+                    warnings_list.append(f"*...and {warnings_count - 5} more warnings*")
+                    
+                embed.add_field(name="Warning History", value="\n\n".join(warnings_list), inline=False)
+            
+            await ctx.send(embed=embed)
+            
+        except Exception as e:
+            raise commands.CommandError(f"Failed to get user overview: {str(e)}")
+
+    @warn.error
+    @overview.error
+    async def admin_command_error(self, ctx, error):
+        if isinstance(error, commands.MissingPermissions):
+            embed = discord.Embed(
+                title="Permission Denied",
+                description="You don't have permission to use this command.",
+                color=discord.Color.red()
+            )
+            await ctx.send(embed=embed)
+            return True
+        elif isinstance(error, commands.MemberNotFound):
+            embed = discord.Embed(
+                title="Error",
+                description="Member not found.",
+                color=discord.Color.red()
+            )
+            await ctx.send(embed=embed)
+            return True
+        elif isinstance(error, commands.CommandError):
+            embed = discord.Embed(
+                title="Error",
+                description=str(error),
+                color=discord.Color.red()
+            )
+            await ctx.send(embed=embed)
+            return True
+        return False
 
     # Load nickname history from file
     def load_nickname_history(self):
@@ -637,6 +950,10 @@ class AdminCog(commands.Cog):
     async def ban(self, ctx, member: discord.Member, *, reason=None):
         """Ban a member from the server"""
         await member.ban(reason=reason)
+        
+        # Add to user actions
+        await self.add_user_action(ctx.guild.id, member.id, "ban", reason)
+        
         embed = discord.Embed(
             title="Ban",
             description=f"{member.mention} has been banned.\nReason: {reason or 'No reason provided'}",
@@ -649,6 +966,10 @@ class AdminCog(commands.Cog):
     async def kick(self, ctx, member: discord.Member, *, reason=None):
         """Kick a member from the server"""
         await member.kick(reason=reason)
+        
+        # Add to user actions
+        await self.add_user_action(ctx.guild.id, member.id, "kick", reason)
+        
         embed = discord.Embed(
             title="Kick",
             description=f"{member.mention} has been kicked.\nReason: {reason or 'No reason provided'}",
@@ -663,6 +984,9 @@ class AdminCog(commands.Cog):
         muted_role = await self.get_or_create_muted_role(ctx)
         if muted_role in member.roles:
             raise commands.CommandError(f"{member.mention} is already muted.")
+        
+        # Add to user actions
+        await self.add_user_action(ctx.guild.id, member.id, "mute", reason, duration)
         
         await self.apply_mute(ctx, member, muted_role, duration, reason)
 
@@ -933,7 +1257,7 @@ class AdminCog(commands.Cog):
 
     @commands.command()
     @has_permissions(administrator=True)
-    async def jail(self, ctx, member: discord.Member, time: str = None):
+    async def jail(self, ctx, member: discord.Member, time: str = None, *, reason=None):
         """Jail a user for a specified duration (e.g., '30s', '5m', '2h', '7d') or permanently if no time specified"""
         try:
             role = ctx.guild.get_role(1211618366763044874)
@@ -944,6 +1268,7 @@ class AdminCog(commands.Cog):
             if not time or time.lower() in ['perm', 'permanent']:
                 duration_seconds = None
                 time_str = "permanently"
+                duration = "permanent"
             else:
                 # Regular expression to parse time format
                 time_pattern = re.compile(r'(\d+)([smhd])')
@@ -962,6 +1287,10 @@ class AdminCog(commands.Cog):
                 # Create human-readable time string
                 units = {'s': 'seconds', 'm': 'minutes', 'h': 'hours', 'd': 'days'}
                 time_str = f"for {amount} {units[unit]}"
+                duration = time
+
+            # Add to user actions
+            await self.add_user_action(ctx.guild.id, member.id, "jail", reason, duration)
 
             # Add role
             await member.add_roles(role)

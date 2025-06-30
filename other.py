@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 import time
 import re
 import asyncio
-from typing import Optional, Tuple, Dict, List
+from typing import Optional, Tuple, Dict, List, Union
 import pytz
 import requests
 import io
@@ -14,12 +14,138 @@ from PIL import Image, ImageDraw, ImageFont
 import textwrap
 import traceback
 import json
+import collections
 
 class OtherCog(commands.Cog):
     def __init__(self, client):
         self.client = client
         self.afk_users = {}  # Store user_id: (reason, timestamp, command_timestamp)
         self.reminder_tasks = {}  # Store user_id: list of asyncio tasks
+        self.google_api_key = os.getenv("GOOGLE_API_KEY", "")
+        self.google_cse_id = os.getenv("GOOGLE_CSE_ID", "")
+        self.image_search_cache = {}  # Store search results: query: [list of image URLs]
+        self.active_image_searches = {}  # Store active searches: message_id: (query, current_index)
+        self.max_cache_size = 50  # Maximum number of queries to cache
+        
+        # Rate limiting for image search
+        self.daily_search_count = 0  # Count of searches today
+        self.last_count_reset = datetime.now()  # When the count was last reset
+        self.user_cooldowns = {}  # Store user_id: last_use_timestamp
+        self.cooldown_time = 300  # 5 minutes in seconds
+        self.daily_limit = 100  # Google's free tier limit
+        
+        # Language codes for translation
+        self.language_codes = {
+            "af": "Afrikaans",
+            "sq": "Albanian",
+            "am": "Amharic",
+            "ar": "Arabic",
+            "hy": "Armenian",
+            "az": "Azerbaijani",
+            "eu": "Basque",
+            "be": "Belarusian",
+            "bn": "Bengali",
+            "bs": "Bosnian",
+            "bg": "Bulgarian",
+            "ca": "Catalan",
+            "ceb": "Cebuano",
+            "ny": "Chichewa",
+            "zh": "Chinese",
+            "co": "Corsican",
+            "hr": "Croatian",
+            "cs": "Czech",
+            "da": "Danish",
+            "nl": "Dutch",
+            "en": "English",
+            "eo": "Esperanto",
+            "et": "Estonian",
+            "tl": "Filipino",
+            "fi": "Finnish",
+            "fr": "French",
+            "fy": "Frisian",
+            "gl": "Galician",
+            "ka": "Georgian",
+            "de": "German",
+            "el": "Greek",
+            "gu": "Gujarati",
+            "ht": "Haitian Creole",
+            "ha": "Hausa",
+            "haw": "Hawaiian",
+            "iw": "Hebrew",
+            "he": "Hebrew",
+            "hi": "Hindi",
+            "hmn": "Hmong",
+            "hu": "Hungarian",
+            "is": "Icelandic",
+            "ig": "Igbo",
+            "id": "Indonesian",
+            "ga": "Irish",
+            "it": "Italian",
+            "ja": "Japanese",
+            "jw": "Javanese",
+            "kn": "Kannada",
+            "kk": "Kazakh",
+            "km": "Khmer",
+            "ko": "Korean",
+            "ku": "Kurdish",
+            "ky": "Kyrgyz",
+            "lo": "Lao",
+            "la": "Latin",
+            "lv": "Latvian",
+            "lt": "Lithuanian",
+            "lb": "Luxembourgish",
+            "mk": "Macedonian",
+            "mg": "Malagasy",
+            "ms": "Malay",
+            "ml": "Malayalam",
+            "mt": "Maltese",
+            "mi": "Maori",
+            "mr": "Marathi",
+            "mn": "Mongolian",
+            "my": "Myanmar",
+            "ne": "Nepali",
+            "no": "Norwegian",
+            "or": "Odia",
+            "ps": "Pashto",
+            "fa": "Persian",
+            "pl": "Polish",
+            "pt": "Portuguese",
+            "pa": "Punjabi",
+            "ro": "Romanian",
+            "ru": "Russian",
+            "sm": "Samoan",
+            "gd": "Scots Gaelic",
+            "sr": "Serbian",
+            "st": "Sesotho",
+            "sn": "Shona",
+            "sd": "Sindhi",
+            "si": "Sinhala",
+            "sk": "Slovak",
+            "sl": "Slovenian",
+            "so": "Somali",
+            "es": "Spanish",
+            "su": "Sundanese",
+            "sw": "Swahili",
+            "sv": "Swedish",
+            "tg": "Tajik",
+            "ta": "Tamil",
+            "te": "Telugu",
+            "th": "Thai",
+            "tr": "Turkish",
+            "uk": "Ukrainian",
+            "ur": "Urdu",
+            "ug": "Uyghur",
+            "uz": "Uzbek",
+            "vi": "Vietnamese",
+            "cy": "Welsh",
+            "xh": "Xhosa",
+            "yi": "Yiddish",
+            "yo": "Yoruba",
+            "zu": "Zulu"
+        }
+        
+        # Translation cache
+        self.translation_cache = {}  # Store {source_text + target_lang: translated_text}
         
         # Create fonts directory if it doesn't exist
         os.makedirs('data/fonts', exist_ok=True)
@@ -79,7 +205,7 @@ class OtherCog(commands.Cog):
             
             # Thunderstorm
             95: "⛈️",   # Thunderstorm
-            96: "⛈️",   # Thunderstorm with slight hail
+            96: "⛈️",   # Thunderstorm th slight hail
             99: "⛈️",   # Thunderstorm with heavy hail
             
             # Default
@@ -326,9 +452,10 @@ class OtherCog(commands.Cog):
             color=0xFFFFFF
         )
         
-        embed.add_field(name="GitHub Repository", value="https://github.com/IM23d/discord-balance-bot", inline=False)
-        embed.add_field(name="Developers", value="@bettercallmilan, @FlorianRuby & @seakyy", inline=True)
+        embed.add_field(name="GitHub Repository", value="https://github.com/IM23d/leurs", inline=False)
+        embed.add_field(name="Developers", value="@bettercallmilan, @reazndev", inline=True)
         embed.add_field(name="Contributors", value="@lhilfiker", inline=True)
+        embed.add_field(name="Was also there", value="@seakyy", inline=True)
         embed.add_field(name="Version", value="1.0.0", inline=True)
         embed.add_field(name="Commands", value="Use `-help` to see all available commands", inline=False)
         
@@ -1087,4 +1214,923 @@ class OtherCog(commands.Cog):
         except Exception as e:
             await temp_msg.edit(content=f"Error getting weather data: {str(e)}")
             print(f"Weather error: {traceback.format_exc()}")
+    
+    def clean_image_cache(self):
+        """Clean up the image search cache if it gets too large"""
+        if len(self.image_search_cache) > self.max_cache_size:
+            # Get the oldest items (we'll remove 20% of the cache)
+            num_to_remove = max(1, int(self.max_cache_size * 0.2))
+            keys_to_remove = list(self.image_search_cache.keys())[:num_to_remove]
+            
+            # Remove the oldest items
+            for key in keys_to_remove:
+                del self.image_search_cache[key]
+    
+    def check_reset_daily_count(self):
+        """Check if we need to reset the daily search count"""
+        now = datetime.now()
+        # Reset count if it's a new day
+        if now.date() > self.last_count_reset.date():
+            self.daily_search_count = 0
+            self.last_count_reset = now
+            return True
+        return False
+    
+    def increment_search_count(self):
+        """Increment the daily search count and return True if limit exceeded"""
+        self.check_reset_daily_count()
+        self.daily_search_count += 1
+        return self.daily_search_count > self.daily_limit
+    
+    def check_user_cooldown(self, user_id: int) -> Tuple[bool, int]:
+        """Check if a user is on cooldown
+        
+        Returns:
+            Tuple[bool, int]: (is_on_cooldown, seconds_remaining)
+        """
+        now = time.time()
+        
+        if user_id in self.user_cooldowns:
+            last_use = self.user_cooldowns[user_id]
+            elapsed = now - last_use
+            
+            if elapsed < self.cooldown_time:
+                return True, int(self.cooldown_time - elapsed)
+        
+        # Update the last use time
+        self.user_cooldowns[user_id] = now
+        return False, 0
+    
+    @commands.command()
+    async def set_google_api_key(self, ctx, api_key: str):
+        """Set the Google API key (admin only)"""
+        # Check if the user has admin permissions
+        if not ctx.author.guild_permissions.administrator:
+            await ctx.send("Only administrators can set the API key.")
+            return
+            
+        # Store the API key
+        self.google_api_key = api_key
+        
+        # Delete the message to keep the API key private
+        try:
+            await ctx.message.delete()
+        except:
+            pass
+            
+        await ctx.send("Google API key has been set successfully!", delete_after=5)
+    
+    @commands.command()
+    async def set_google_cse_id(self, ctx, cse_id: str):
+        """Set the Google Custom Search Engine ID (admin only)"""
+        # Check if the user has admin permissions
+        if not ctx.author.guild_permissions.administrator:
+            await ctx.send("Only administrators can set the CSE ID.")
+            return
+            
+        # Store the CSE ID
+        self.google_cse_id = cse_id
+        
+        # Delete the message to keep the CSE ID private
+        try:
+            await ctx.message.delete()
+        except:
+            pass
+            
+        await ctx.send("Google Custom Search Engine ID has been set successfully!", delete_after=5)
+    
+    async def search_images(self, query: str, num: int = 10) -> List[Dict]:
+        """Search for images using Google Custom Search API or fallback to free API"""
+        # Special case for random images
+        if query.lower() == "random":
+            # Generate random categories for Unsplash
+            categories = ["nature", "animals", "technology", "architecture", "food", "travel", 
+                         "people", "business", "sports", "health", "fashion", "art"]
+            random_categories = random.sample(categories, min(5, len(categories)))
+            query = ",".join(random_categories)
+        
+        # Check if we have this query cached
+        if query in self.image_search_cache:
+            return self.image_search_cache[query]
+            
+        # Check if we have Google API credentials
+        if self.google_api_key and self.google_cse_id:
+            try:
+                # Check if we've hit the daily limit
+                if self.increment_search_count():
+                    print("Daily Google API search limit reached, falling back to free API")
+                    # Fall through to free API
+                else:
+                    # Build the search URL for Google Custom Search
+                    search_url = "https://www.googleapis.com/customsearch/v1"
+                    params = {
+                        "q": query,
+                        "cx": self.google_cse_id,
+                        "key": self.google_api_key,
+                        "searchType": "image",
+                        "num": num
+                    }
+                    
+                    # Make the request
+                    response = requests.get(search_url, params=params, timeout=10)
+                    
+                    if response.status_code != 200:
+                        print(f"Error searching for images: {response.status_code} {response.text}")
+                        # Fall through to free API
+                    else:
+                        # Parse the response
+                        data = response.json()
+                        
+                        # Extract image information
+                        images = []
+                        if "items" in data:
+                            for item in data["items"]:
+                                image_info = {
+                                    "title": item.get("title", "No title"),
+                                    "url": item.get("link", ""),
+                                    "source": item.get("displayLink", ""),
+                                    "thumbnail": item.get("image", {}).get("thumbnailLink", ""),
+                                    "context": item.get("image", {}).get("contextLink", "")
+                                }
+                                images.append(image_info)
+                                
+                            # Cache the results
+                            self.image_search_cache[query] = images
+                            
+                            # Clean up the cache if needed
+                            self.clean_image_cache()
+                            
+                            return images
+            except Exception as e:
+                print(f"Error searching for images with Google API: {str(e)}")
+                # Fall through to free API
+        
+        # Fallback to Unsplash API (free, no key required)
+        try:
+            # Use Unsplash Source API
+            encoded_query = query.replace(" ", "-").replace(",", ",")
+            images = []
+            
+            # Generate images based on the query
+            for i in range(min(10, num)):
+                try:
+                    # Unsplash Source provides random images for a given search term
+                    # Add a random number to prevent caching
+                    random_param = random.randint(1, 1000000)
+                    image_url = f"https://source.unsplash.com/featured/?{encoded_query}&sig={i}&random={random_param}"
+                    
+                    # Verify the image URL is valid by making a HEAD request
+                    head_response = requests.head(image_url, timeout=5)
+                    if head_response.status_code != 200:
+                        continue
+                    
+                    # Create image info object
+                    image_info = {
+                        "title": f"{query.title()} - Image {i+1}",
+                        "url": image_url,
+                        "source": "Unsplash",
+                        "thumbnail": image_url,
+                        "context": f"https://unsplash.com/s/photos/{encoded_query}"
+                    }
+                    images.append(image_info)
+                except Exception as e:
+                    print(f"Error with individual Unsplash image {i}: {str(e)}")
+                    continue
+            
+            # If we got at least one image, cache the results
+            if images:
+                self.image_search_cache[query] = images
+                
+                # Clean up the cache if needed
+                self.clean_image_cache()
+                
+                return images
+            else:
+                return []
+                
+        except Exception as e:
+            print(f"Error searching for images with free API: {str(e)}")
+            return []
+    
+    @commands.command(aliases=["image", "search"])
+    async def img(self, ctx, *, query: str = None):
+        """Search for images and navigate through results with reactions"""
+        # Check if query was provided
+        if not query:
+            embed = discord.Embed(
+                title="Image Search Help",
+                description="Search for images using Google search.",
+                color=0x3498db
+            )
+            embed.add_field(
+                name="Usage",
+                value="`-img [search term]`",
+                inline=False
+            )
+            embed.add_field(
+                name="Examples",
+                value="`-img cute cats`\n`-img sunset beach`\n`-img random` (for random images)",
+                inline=False
+            )
+            embed.add_field(
+                name="Navigation",
+                value="Use the ⬅️ and ➡️ reactions to navigate through search results.",
+                inline=False
+            )
+            embed.add_field(
+                name="Rate Limits",
+                value="Regular users can use this command once every 5 minutes.\n"
+                      "Administrators are not subject to this cooldown.",
+                inline=False
+            )
+            await ctx.send(embed=embed)
+            return
+            
+        # Check if the user is an admin (bypass cooldown)
+        is_admin = ctx.author.guild_permissions.administrator
+        
+        # Check for cooldown if not an admin
+        if not is_admin:
+            on_cooldown, time_remaining = self.check_user_cooldown(ctx.author.id)
+            if on_cooldown:
+                minutes = time_remaining // 60
+                seconds = time_remaining % 60
+                time_str = f"{minutes} minutes and {seconds} seconds" if minutes > 0 else f"{seconds} seconds"
+                
+                embed = discord.Embed(
+                    title="Cooldown Active",
+                    description=f"You need to wait {time_str} before using this command again.",
+                    color=0xFF9900
+                )
+                embed.add_field(
+                    name="Why?",
+                    value="This cooldown helps prevent hitting Google API limits.\n"
+                          "Server administrators are not subject to this cooldown.",
+                    inline=False
+                )
+                await ctx.send(embed=embed)
+                return
+        
+        # Check if we've hit the daily limit
+        if self.google_api_key and self.google_cse_id and self.daily_search_count >= self.daily_limit:
+            self.check_reset_daily_count()  # Check if we need to reset the count
+            
+            # If we're still over the limit, show a warning
+            if self.daily_search_count >= self.daily_limit:
+                embed = discord.Embed(
+                    title="Daily Limit Reached",
+                    description="The daily Google API search limit has been reached.",
+                    color=0xFF0000
+                )
+                embed.add_field(
+                    name="Alternative",
+                    value="Using Unsplash as a fallback for image searches.\n"
+                          "Results may be less accurate.",
+                    inline=False
+                )
+                embed.set_footer(text="The limit will reset at midnight UTC")
+                await ctx.send(embed=embed)
+        
+        # Send a loading message
+        loading_msg = await ctx.send(f"🔍 Searching for images of '{query}'...")
+        
+        try:
+            # Search for images (will use Google API or fallback to free API)
+            images = await self.search_images(query)
+            
+            if not images:
+                embed = discord.Embed(
+                    title="No Results",
+                    description=f"No images found for '{query}'",
+                    color=0xFF9900
+                )
+                embed.add_field(
+                    name="Suggestions",
+                    value="• Try a different search term\n"
+                          "• Check for spelling errors\n"
+                          "• Use more general keywords\n"
+                          "• Try `-img random` for random images",
+                    inline=False
+                )
+                await loading_msg.edit(content=None, embed=embed)
+                return
+                
+            # Create an embed for the first image
+            current_index = 0
+            embed = await self.create_image_embed(images[current_index], query, current_index, len(images))
+            
+            # Add API source note if using fallback
+            if not self.google_api_key or not self.google_cse_id or self.daily_search_count >= self.daily_limit:
+                embed.add_field(
+                    name="Note",
+                    value="Using Unsplash for images. For better results, administrators can set up Google API with `-img_setup`",
+                    inline=False
+                )
+            
+            # Send the embed and delete the loading message
+            image_msg = await ctx.send(embed=embed)
+            await loading_msg.delete()
+            
+            # Store the active search
+            self.active_image_searches[image_msg.id] = (query, current_index, images)
+            
+            # Add navigation reactions
+            await image_msg.add_reaction("⬅️")
+            await image_msg.add_reaction("➡️")
+            
+            # Create a reaction check function
+            def check(reaction, user):
+                return (
+                    reaction.message.id == image_msg.id and
+                    user != self.client.user and
+                    str(reaction.emoji) in ["⬅️", "➡️"]
+                )
+                
+            # Wait for reactions
+            while True:
+                try:
+                    reaction, user = await self.client.wait_for("reaction_add", timeout=60.0, check=check)
+                    
+                    # Remove the user's reaction
+                    try:
+                        await reaction.remove(user)
+                    except:
+                        # If we can't remove the reaction (missing permissions), continue anyway
+                        pass
+                    
+                    # Get the current index
+                    query, current_index, images = self.active_image_searches[image_msg.id]
+                    
+                    # Update the index based on the reaction
+                    if str(reaction.emoji) == "⬅️":
+                        current_index = (current_index - 1) % len(images)
+                    elif str(reaction.emoji) == "➡️":
+                        current_index = (current_index + 1) % len(images)
+                        
+                    # Update the stored index
+                    self.active_image_searches[image_msg.id] = (query, current_index, images)
+                    
+                    # Update the embed
+                    new_embed = await self.create_image_embed(images[current_index], query, current_index, len(images))
+                    
+                    # Add API source note if using fallback
+                    if not self.google_api_key or not self.google_cse_id or self.daily_search_count >= self.daily_limit:
+                        new_embed.add_field(
+                            name="Note",
+                            value="Using Unsplash for images. For better results, administrators can set up Google API with `-img_setup`",
+                            inline=False
+                        )
+                    
+                    await image_msg.edit(embed=new_embed)
+                    
+                except asyncio.TimeoutError:
+                    # Remove the message from active searches
+                    if image_msg.id in self.active_image_searches:
+                        del self.active_image_searches[image_msg.id]
+                    
+                    # Try to clear reactions after timeout
+                    try:
+                        await image_msg.clear_reactions()
+                    except:
+                        pass
+                    
+                    # Update footer to show that navigation has ended
+                    embed = image_msg.embeds[0]
+                    embed.set_footer(text=f"Image {current_index + 1} of {len(images)} | Navigation timeout")
+                    await image_msg.edit(embed=embed)
+                    break
+                    
+                except Exception as e:
+                    print(f"Error in image navigation: {str(e)}")
+                    break
+                    
+        except Exception as e:
+            error_embed = discord.Embed(
+                title="Error",
+                description=f"An error occurred while searching for images: {str(e)}",
+                color=0xFF0000
+            )
+            await loading_msg.edit(content=None, embed=error_embed)
+            print(f"Image search error: {traceback.format_exc()}")
+    
+    @commands.command()
+    async def imgstats(self, ctx):
+        """Show image search usage statistics (admin only)"""
+        # Check if the user has admin permissions
+        if not ctx.author.guild_permissions.administrator:
+            await ctx.send("Only administrators can view search statistics.")
+            return
+            
+        # Create an embed with the stats
+        embed = discord.Embed(
+            title="Image Search Statistics",
+            color=0x00FF00
+        )
+        
+        # Check if we need to reset the daily count
+        self.check_reset_daily_count()
+        
+        # Add daily search count
+        embed.add_field(
+            name="Daily Search Count",
+            value=f"{self.daily_search_count}/{self.daily_limit}",
+            inline=True
+        )
+        
+        # Add reset time
+        next_reset = datetime.combine(self.last_count_reset.date() + timedelta(days=1), datetime.min.time())
+        time_until_reset = next_reset - datetime.now()
+        hours, remainder = divmod(time_until_reset.seconds, 3600)
+        minutes, _ = divmod(remainder, 60)
+        
+        embed.add_field(
+            name="Resets In",
+            value=f"{hours} hours, {minutes} minutes",
+            inline=True
+        )
+        
+        # Add cache stats
+        embed.add_field(
+            name="Cache Size",
+            value=f"{len(self.image_search_cache)}/{self.max_cache_size} queries",
+            inline=True
+        )
+        
+        # Add active users on cooldown
+        now = time.time()
+        active_cooldowns = sum(1 for last_use in self.user_cooldowns.values() 
+                             if now - last_use < self.cooldown_time)
+        
+        embed.add_field(
+            name="Users on Cooldown",
+            value=f"{active_cooldowns} users",
+            inline=True
+        )
+        
+        # Add API status
+        api_status = "✅ Configured" if self.google_api_key and self.google_cse_id else "❌ Not Configured"
+        embed.add_field(
+            name="Google API Status",
+            value=api_status,
+            inline=True
+        )
+        
+        # Add command to clear cooldowns
+        embed.add_field(
+            name="Admin Commands",
+            value="`-img_reset_cooldowns` - Reset all user cooldowns\n"
+                  "`-img_reset_count` - Reset the daily search count",
+            inline=False
+        )
+        
+        await ctx.send(embed=embed)
+    
+    @commands.command()
+    async def img_reset_cooldowns(self, ctx):
+        """Reset all user cooldowns (admin only)"""
+        # Check if the user has admin permissions
+        if not ctx.author.guild_permissions.administrator:
+            await ctx.send("Only administrators can reset cooldowns.")
+            return
+            
+        # Reset all cooldowns
+        self.user_cooldowns.clear()
+        
+        await ctx.send("✅ All user cooldowns have been reset.")
+    
+    @commands.command()
+    async def img_reset_count(self, ctx):
+        """Reset the daily search count (admin only)"""
+        # Check if the user has admin permissions
+        if not ctx.author.guild_permissions.administrator:
+            await ctx.send("Only administrators can reset the daily count.")
+            return
+            
+        # Reset the count
+        self.daily_search_count = 0
+        self.last_count_reset = datetime.now()
+        
+        await ctx.send("✅ Daily search count has been reset.")
+    
+    
+    @commands.Cog.listener()
+    async def on_reaction_remove(self, reaction, user):
+        """Handle manual reaction removal for image navigation"""
+        # Ignore bot reactions
+        if user.bot:
+            return
+            
+        # Check if this is for an active image search
+        if reaction.message.id in self.active_image_searches and str(reaction.emoji) in ["⬅️", "➡️"]:
+            query, current_index, images = self.active_image_searches[reaction.message.id]
+            
+            # Update the index based on the reaction
+            if str(reaction.emoji) == "⬅️":
+                current_index = (current_index - 1) % len(images)
+            elif str(reaction.emoji) == "➡️":
+                current_index = (current_index + 1) % len(images)
+                
+            # Update the stored index
+            self.active_image_searches[reaction.message.id] = (query, current_index, images)
+            
+            # Update the embed
+            new_embed = await self.create_image_embed(images[current_index], query, current_index, len(images))
+            await reaction.message.edit(embed=new_embed)
+    
+    async def create_image_embed(self, image_info: Dict, query: str, index: int, total: int) -> discord.Embed:
+        """Create an embed for an image search result"""
+        embed = discord.Embed(
+            title=f"Image Search: {query}",
+            description=image_info["title"],
+            color=0x3498db
+        )
+        
+        # Add the image
+        embed.set_image(url=image_info["url"])
+        
+        # Add source information
+        embed.add_field(
+            name="Source",
+            value=f"[{image_info['source']}]({image_info['context']})",
+            inline=True
+        )
+        
+        # Add navigation information
+        embed.set_footer(text=f"Image {index + 1} of {total} | Use ⬅️ ➡️ to navigate")
+        
+        return embed
+    
+    async def detect_language(self, text: str) -> str:
+        """Detect the language of a text using LibreTranslate API"""
+        try:
+            api_url = "https://libretranslate.de/detect"
+            data = {"q": text}
+            
+            response = requests.post(api_url, data=data, timeout=10)
+            
+            if response.status_code != 200:
+                return "en"  # Default to English if detection fails
+                
+            detected = response.json()
+            
+            if isinstance(detected, list) and len(detected) > 0:
+                return detected[0].get("language", "en")
+            
+            return "en"
+        except Exception as e:
+            print(f"Error detecting language: {str(e)}")
+            return "en"  # Default to English on error
+    
+    async def translate_text(self, text: str, target_lang: str = "en", source_lang: str = None) -> Union[str, None]:
+        """Translate text using LibreTranslate API"""
+        if not text:
+            return None
+            
+        # Check cache first
+        cache_key = f"{text}_{target_lang}_{source_lang or 'auto'}"
+        if cache_key in self.translation_cache:
+            return self.translation_cache[cache_key]
+            
+        try:
+            # If source language is not provided, detect it
+            if not source_lang:
+                source_lang = await self.detect_language(text)
+                
+            # Don't translate if source and target are the same
+            if source_lang == target_lang:
+                return text
+                
+            # Try LibreTranslate API
+            api_url = "https://libretranslate.de/translate"
+            data = {
+                "q": text,
+                "source": source_lang,
+                "target": target_lang
+            }
+            
+            response = requests.post(api_url, data=data, timeout=15)
+            
+            if response.status_code != 200:
+                # Try an alternative API as fallback
+                return await self.translate_text_fallback(text, target_lang, source_lang)
+                
+            result = response.json()
+            
+            if "translatedText" in result:
+                translated = result["translatedText"]
+                # Cache the result
+                self.translation_cache[cache_key] = translated
+                return translated
+                
+            return await self.translate_text_fallback(text, target_lang, source_lang)
+            
+        except Exception as e:
+            print(f"Error translating with primary API: {str(e)}")
+            # Try fallback on exception
+            return await self.translate_text_fallback(text, target_lang, source_lang)
+    
+    async def translate_text_fallback(self, text: str, target_lang: str = "en", source_lang: str = None) -> Union[str, None]:
+        """Fallback translation method using another free API"""
+        try:
+            # Try LingvaTranslate API as fallback
+            api_url = f"https://lingva.ml/api/v1/{source_lang or 'auto'}/{target_lang}/{text}"
+            
+            response = requests.get(api_url, timeout=15)
+            
+            if response.status_code == 200:
+                result = response.json()
+                if "translation" in result:
+                    translated = result["translation"]
+                    # Cache the result
+                    cache_key = f"{text}_{target_lang}_{source_lang or 'auto'}"
+                    self.translation_cache[cache_key] = translated
+                    return translated
+            
+            # If that fails too, try one more fallback
+            api_url = f"https://translate.mentality.rip/translate"
+            data = {
+                "source": source_lang or "auto",
+                "target": target_lang,
+                "q": text
+            }
+            
+            response = requests.post(api_url, json=data, timeout=15)
+            
+            if response.status_code == 200:
+                result = response.json()
+                if "translatedText" in result:
+                    translated = result["translatedText"]
+                    # Cache the result
+                    cache_key = f"{text}_{target_lang}_{source_lang or 'auto'}"
+                    self.translation_cache[cache_key] = translated
+                    return translated
+            
+            # If all fails, return the original text
+            return text
+            
+        except Exception as e:
+            print(f"Error translating with fallback API: {str(e)}")
+            return text  # Return original text on error
+    
+    @commands.command(aliases=["t", "tr"])
+    async def translate(self, ctx, target_lang: str = "en", *, text: str = None):
+        """Translate text to another language. Reply to a message or provide text."""
+        # Check if it's a reply to a message
+        if ctx.message.reference:
+            try:
+                # Get the message being replied to
+                replied_msg = await ctx.channel.fetch_message(ctx.message.reference.message_id)
+                
+                # If there's no explicit target language in the command, but there's text,
+                # then the first argument might actually be text not a language code
+                if text is None and target_lang and target_lang.lower() not in self.language_codes:
+                    text = target_lang
+                    target_lang = "en"  # Default to English
+                
+                # Send a loading message
+                loading_msg = await ctx.send(f"🔄 Translating...")
+                
+                # Check if the target language is valid
+                if target_lang.lower() not in self.language_codes:
+                    await loading_msg.edit(content=f"❌ Invalid language code: `{target_lang}`\nUse `-languages` to see available language codes.")
+                    return
+                
+                # Get the content to translate
+                content_to_translate = replied_msg.content
+                
+                # If there's no content but there are embeds, try to extract text from them
+                if not content_to_translate and replied_msg.embeds:
+                    for embed in replied_msg.embeds:
+                        if embed.description:
+                            content_to_translate = embed.description
+                            break
+                
+                if not content_to_translate:
+                    await loading_msg.edit(content="❌ No text content to translate.")
+                    return
+                
+                # Translate the text
+                translated = await self.translate_text(content_to_translate, target_lang.lower())
+                
+                if translated:
+                    # Get source and target language names
+                    source_lang = await self.detect_language(content_to_translate)
+                    source_lang_name = self.language_codes.get(source_lang, "Unknown")
+                    target_lang_name = self.language_codes.get(target_lang.lower(), "Unknown")
+                    
+                    # Create embed with translation
+                    embed = discord.Embed(
+                        title=f"Translation: {source_lang_name} → {target_lang_name}",
+                        color=0x3498db
+                    )
+                    
+                    # Add original text (truncate if too long)
+                    if len(content_to_translate) > 1024:
+                        content_to_translate = content_to_translate[:1020] + "..."
+                    embed.add_field(
+                        name="Original",
+                        value=content_to_translate,
+                        inline=False
+                    )
+                    
+                    # Add translated text (truncate if too long)
+                    if len(translated) > 1024:
+                        translated = translated[:1020] + "..."
+                    embed.add_field(
+                        name="Translation",
+                        value=translated,
+                        inline=False
+                    )
+                    
+                    # Add author info
+                    embed.set_author(
+                        name=replied_msg.author.display_name,
+                        icon_url=replied_msg.author.display_avatar.url
+                    )
+                    
+                    # Send the embed and delete the loading message
+                    await ctx.send(embed=embed)
+                    await loading_msg.delete()
+                else:
+                    await loading_msg.edit(content="❌ Translation failed. Please try again later.")
+                
+            except discord.NotFound:
+                await ctx.send("❌ Could not find the message to translate.")
+            except Exception as e:
+                await ctx.send(f"❌ An error occurred during translation: {str(e)}")
+                traceback.print_exc()
+        
+        # Direct text translation
+        elif text:
+            # Send a loading message
+            loading_msg = await ctx.send(f"🔄 Translating...")
+            
+            # Check if the target language is valid
+            if target_lang.lower() not in self.language_codes:
+                await loading_msg.edit(content=f"❌ Invalid language code: `{target_lang}`\nUse `-languages` to see available language codes.")
+                return
+            
+            # Translate the text
+            translated = await self.translate_text(text, target_lang.lower())
+            
+            if translated:
+                # Get source and target language names
+                source_lang = await self.detect_language(text)
+                source_lang_name = self.language_codes.get(source_lang, "Unknown")
+                target_lang_name = self.language_codes.get(target_lang.lower(), "Unknown")
+                
+                # Create embed with translation
+                embed = discord.Embed(
+                    title=f"Translation: {source_lang_name} → {target_lang_name}",
+                    color=0x3498db
+                )
+                
+                # Add original text (truncate if too long)
+                if len(text) > 1024:
+                    text = text[:1020] + "..."
+                embed.add_field(
+                    name="Original",
+                    value=text,
+                    inline=False
+                )
+                
+                # Add translated text (truncate if too long)
+                if len(translated) > 1024:
+                    translated = translated[:1020] + "..."
+                embed.add_field(
+                    name="Translation",
+                    value=translated,
+                    inline=False
+                )
+                
+                # Send the embed and delete the loading message
+                await ctx.send(embed=embed)
+                await loading_msg.delete()
+            else:
+                await loading_msg.edit(content="❌ Translation failed. Please try again later.")
+        
+        # No text provided and not a reply
+        else:
+            embed = discord.Embed(
+                title="Translation Help",
+                description="Translate text to another language.",
+                color=0x3498db
+            )
+            
+            embed.add_field(
+                name="Usage",
+                value="• Reply to a message with `-translate [language_code]`\n"
+                      "• Directly translate with `-translate [language_code] [text]`\n"
+                      "• Default target language is English if not specified",
+                inline=False
+            )
+            
+            embed.add_field(
+                name="Examples",
+                value="• `-translate fr Hello world`  (English to French)\n"
+                      "• `-translate`  (Reply to translate to English)\n"
+                      "• `-translate de`  (Reply to translate to German)\n"
+                      "• `-translate es Bonjour`  (French to Spanish)",
+                inline=False
+            )
+            
+            embed.add_field(
+                name="Common Language Codes",
+                value="• `en` - English\n"
+                      "• `es` - Spanish\n"
+                      "• `fr` - French\n"
+                      "• `de` - German\n"
+                      "• `it` - Italian\n"
+                      "• `ja` - Japanese\n"
+                      "• `ko` - Korean\n"
+                      "• `zh` - Chinese\n"
+                      "• `ru` - Russian\n"
+                      "• `ar` - Arabic\n"
+                      "Use `-languages` for a full list",
+                inline=False
+            )
+            
+            await ctx.send(embed=embed)
+    
+    @commands.command(aliases=["langs", "language", "lang"])
+    async def languages(self, ctx):
+        """Show available language codes for translation"""
+        # Create a paginated embed for language codes
+        embeds = []
+        
+        # Sort languages by name
+        sorted_languages = sorted(self.language_codes.items(), key=lambda x: x[1])
+        
+        # Split into chunks for pagination (20 languages per page)
+        chunks = [sorted_languages[i:i + 20] for i in range(0, len(sorted_languages), 20)]
+        
+        # Create an embed for each chunk
+        for i, chunk in enumerate(chunks):
+            embed = discord.Embed(
+                title=f"Available Languages (Page {i+1}/{len(chunks)})",
+                description="Use these language codes with the translation command.",
+                color=0x3498db
+            )
+            
+            # Add language codes and names
+            lang_text = ""
+            for code, name in chunk:
+                lang_text += f"`{code}` - {name}\n"
+                
+            embed.add_field(
+                name="Language Codes",
+                value=lang_text,
+                inline=False
+            )
+            
+            embed.set_footer(text=f"Page {i+1}/{len(chunks)} • Use -translate [code] to translate")
+            embeds.append(embed)
+        
+        # Send the first embed
+        current_page = 0
+        message = await ctx.send(embed=embeds[current_page])
+        
+        # Add navigation reactions if there are multiple pages
+        if len(embeds) > 1:
+            await message.add_reaction("⬅️")
+            await message.add_reaction("➡️")
+            
+            # Define a check function for reactions
+            def check(reaction, user):
+                return (
+                    reaction.message.id == message.id and
+                    user == ctx.author and
+                    str(reaction.emoji) in ["⬅️", "➡️"]
+                )
+                
+            # Wait for reactions and change pages
+            while True:
+                try:
+                    reaction, user = await self.client.wait_for("reaction_add", timeout=60.0, check=check)
+                    
+                    # Handle page change
+                    if str(reaction.emoji) == "⬅️":
+                        current_page = (current_page - 1) % len(embeds)
+                    elif str(reaction.emoji) == "➡️":
+                        current_page = (current_page + 1) % len(embeds)
+                        
+                    # Update the message with the new embed
+                    await message.edit(embed=embeds[current_page])
+                    
+                    # Remove the user's reaction
+                    try:
+                        await reaction.remove(user)
+                    except:
+                        pass
+                        
+                except asyncio.TimeoutError:
+                    # End pagination after timeout
+                    try:
+                        await message.clear_reactions()
+                    except:
+                        pass
+                    break
+                except Exception as e:
+                    print(f"Error in language pagination: {str(e)}")
+                    break
     
