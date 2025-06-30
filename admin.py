@@ -35,6 +35,9 @@ class AdminCog(commands.Cog):
         # Auto reactions file path
         self.reactions_file = self.data_dir / "auto_reactions.json"
         
+        # Reaction roles file path
+        self.reaction_roles_file = self.data_dir / "reaction_roles.json"
+        
         # Initialize role saving task
         self.role_save_task = None
         self.last_save_time = None
@@ -48,6 +51,9 @@ class AdminCog(commands.Cog):
         
         # Initialize auto reactions
         self.auto_reactions = self.load_auto_reactions()
+        
+        # Initialize reaction roles
+        self.reaction_roles = self.load_reaction_roles()
 
     def cog_unload(self):
         # Cancel the role save task when the cog is unloaded
@@ -1800,6 +1806,174 @@ class AdminCog(commands.Cog):
             embed = discord.Embed(
                 title="Error",
                 description="Please specify the number of messages to delete.",
+                color=discord.Color.red()
+            )
+            await ctx.send(embed=embed)
+            return True
+        elif isinstance(error, commands.CommandError):
+            embed = discord.Embed(
+                title="Error",
+                description=str(error),
+                color=discord.Color.red()
+            )
+            await ctx.send(embed=embed)
+            return True
+        return False
+
+    def load_reaction_roles(self):
+        """Load reaction roles from JSON file"""
+        try:
+            if os.path.exists(self.reaction_roles_file):
+                with open(self.reaction_roles_file, 'r') as f:
+                    return json.load(f)
+            else:
+                # Create empty reaction roles file
+                with open(self.reaction_roles_file, 'w') as f:
+                    json.dump({}, f)
+                return {}
+        except Exception as e:
+            print(f"Error loading reaction roles: {e}")
+            return {}
+
+    def save_reaction_roles(self):
+        """Save reaction roles to JSON file"""
+        try:
+            with open(self.reaction_roles_file, 'w') as f:
+                json.dump(self.reaction_roles, f, indent=2)
+            return True
+        except Exception as e:
+            print(f"Error saving reaction roles: {e}")
+            return False
+
+    @commands.command()
+    @has_permissions(administrator=True)
+    async def reactrole(self, ctx, role_id: int, emoji: str, *, message: str):
+        """Create a reaction role message
+        
+        Usage:
+        !reactrole [role_id] [emoji] [message] - Creates an embed with the message and sets up a reaction role
+        
+        When users react with the specified emoji, they will receive the role.
+        """
+        try:
+            # Check if the role exists
+            role = ctx.guild.get_role(role_id)
+            if not role:
+                raise commands.CommandError(f"Role with ID {role_id} not found.")
+            
+            # Create the embed
+            embed = discord.Embed(
+                description=message,
+                color=discord.Color.blue()
+            )
+            
+            # Send the message with the embed
+            react_message = await ctx.send(embed=embed)
+            
+            # Add the reaction to the message
+            try:
+                await react_message.add_reaction(emoji)
+            except discord.HTTPException:
+                await react_message.delete()
+                raise commands.CommandError(f"Invalid emoji: {emoji}")
+            
+            # Save the reaction role information
+            guild_id = str(ctx.guild.id)
+            message_id = str(react_message.id)
+            
+            if guild_id not in self.reaction_roles:
+                self.reaction_roles[guild_id] = {}
+            
+            if message_id not in self.reaction_roles[guild_id]:
+                self.reaction_roles[guild_id][message_id] = {}
+            
+            self.reaction_roles[guild_id][message_id][emoji] = role_id
+            self.save_reaction_roles()
+            
+        except discord.Forbidden:
+            raise commands.CommandError("I don't have permission to add reactions or manage roles.")
+        except Exception as e:
+            raise commands.CommandError(f"Error creating reaction role: {str(e)}")
+
+    @commands.Cog.listener()
+    async def on_raw_reaction_add(self, payload):
+        """Handle reaction role assignments when a user adds a reaction"""
+        # Ignore bot reactions
+        if payload.member.bot:
+            return
+            
+        guild_id = str(payload.guild_id)
+        message_id = str(payload.message_id)
+        emoji = str(payload.emoji)
+        
+        # Check if this is a reaction role message
+        if (guild_id in self.reaction_roles and 
+            message_id in self.reaction_roles[guild_id] and 
+            emoji in self.reaction_roles[guild_id][message_id]):
+            
+            try:
+                # Get the role ID and assign it
+                role_id = self.reaction_roles[guild_id][message_id][emoji]
+                role = payload.member.guild.get_role(role_id)
+                
+                if role:
+                    await payload.member.add_roles(role, reason="Reaction role")
+            except Exception as e:
+                print(f"Error assigning reaction role: {e}")
+
+    @commands.Cog.listener()
+    async def on_raw_reaction_remove(self, payload):
+        """Handle reaction role removals when a user removes a reaction"""
+        guild_id = str(payload.guild_id)
+        message_id = str(payload.message_id)
+        emoji = str(payload.emoji)
+        
+        # Check if this is a reaction role message
+        if (guild_id in self.reaction_roles and 
+            message_id in self.reaction_roles[guild_id] and 
+            emoji in self.reaction_roles[guild_id][message_id]):
+            
+            try:
+                # Get the guild and member
+                guild = self.client.get_guild(payload.guild_id)
+                if not guild:
+                    return
+                    
+                member = guild.get_member(payload.user_id)
+                if not member or member.bot:
+                    return
+                
+                # Get the role ID and remove it
+                role_id = self.reaction_roles[guild_id][message_id][emoji]
+                role = guild.get_role(role_id)
+                
+                if role and role in member.roles:
+                    await member.remove_roles(role, reason="Reaction role removed")
+            except Exception as e:
+                print(f"Error removing reaction role: {e}")
+
+    @reactrole.error
+    async def reactrole_error(self, ctx, error):
+        if isinstance(error, commands.MissingPermissions):
+            embed = discord.Embed(
+                title="Permission Denied",
+                description="You don't have permission to use this command.",
+                color=discord.Color.red()
+            )
+            await ctx.send(embed=embed)
+            return True
+        elif isinstance(error, commands.MissingRequiredArgument):
+            embed = discord.Embed(
+                title="Error",
+                description="Missing required argument. Usage: `!reactrole [role_id] [emoji] [message]`",
+                color=discord.Color.red()
+            )
+            await ctx.send(embed=embed)
+            return True
+        elif isinstance(error, commands.BadArgument):
+            embed = discord.Embed(
+                title="Error",
+                description="Invalid role ID. Please provide a valid role ID.",
                 color=discord.Color.red()
             )
             await ctx.send(embed=embed)
