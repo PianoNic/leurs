@@ -1599,6 +1599,167 @@ class AdminCog(commands.Cog):
                 except Exception as e:
                     print(f"Error adding reaction {emoji}: {e}")
     
+    @commands.command()
+    @has_permissions(administrator=True)
+    async def embed(self, ctx, color: str = None, *, text: str = None):
+        """Create an embed with custom color and text (Admin only)
+        
+        Usage:
+        !embed [color] [text] - Create an embed with specified color and text
+        !embed [color] - When replying to a message, embeds that message's content
+        
+        Color can be a common color name (red, blue, green, etc.) or a hex code
+        Text can include markdown formatting
+        If color is omitted, the embed will be gray
+        """
+        # Delete the command message
+        try:
+            await ctx.message.delete()
+        except:
+            pass
+            
+        # Check if this is a reply to another message
+        reference = ctx.message.reference
+        if reference and reference.message_id:
+            try:
+                # Get the message being replied to
+                replied_msg = await ctx.channel.fetch_message(reference.message_id)
+                
+                # Use the replied message's content as text
+                if text is None:
+                    text = replied_msg.content
+                
+                # Set up the embed color
+                embed_color = self.parse_color(color)
+                
+                # Create the embed
+                embed = discord.Embed(
+                    description=text,
+                    color=embed_color
+                )
+                
+                # Add author information
+                embed.set_author(
+                    name=replied_msg.author.display_name,
+                    icon_url=replied_msg.author.display_avatar.url
+                )
+                
+                # Add timestamp
+                embed.timestamp = replied_msg.created_at
+                
+                # Add attachments if any
+                if replied_msg.attachments:
+                    # If there's an image, set it as the embed image
+                    for attachment in replied_msg.attachments:
+                        if attachment.content_type and attachment.content_type.startswith('image/'):
+                            embed.set_image(url=attachment.url)
+                            break
+                
+                await ctx.send(embed=embed)
+                
+                # Try to delete the original message if bot has permissions
+                try:
+                    await replied_msg.delete()
+                except:
+                    pass
+                    
+                return
+            except discord.NotFound:
+                # Message not found, continue with normal embed
+                pass
+                
+        # Check if text is provided
+        if text is None:
+            if color is None:
+                # Neither color nor text provided
+                raise commands.CommandError("Please provide text for the embed.")
+            else:
+                # Only color provided, use it as text and set color to default
+                text = color
+                color = None
+                
+        # Set up the embed color
+        embed_color = self.parse_color(color)
+        
+        # Create and send the embed
+        embed = discord.Embed(
+            description=text,
+            color=embed_color
+        )
+        
+        await ctx.send(embed=embed)
+        
+    def parse_color(self, color):
+        """Parse color string into discord.Color"""
+        # Default color
+        embed_color = discord.Color.light_grey()
+        
+        if color:
+            # Check if it's a hex code
+            if color.startswith('#'):
+                color = color[1:]  # Remove the # if present
+                
+            try:
+                # Try to interpret as hex code
+                if len(color) == 6:
+                    # Convert hex to decimal
+                    r = int(color[0:2], 16)
+                    g = int(color[2:4], 16)
+                    b = int(color[4:6], 16)
+                    embed_color = discord.Color.from_rgb(r, g, b)
+                else:
+                    # Check for named colors
+                    color_lower = color.lower()
+                    if color_lower == "red":
+                        embed_color = discord.Color.red()
+                    elif color_lower == "blue":
+                        embed_color = discord.Color.blue()
+                    elif color_lower == "green":
+                        embed_color = discord.Color.green()
+                    elif color_lower == "yellow":
+                        embed_color = discord.Color.yellow()
+                    elif color_lower == "orange":
+                        embed_color = discord.Color.orange()
+                    elif color_lower == "purple":
+                        embed_color = discord.Color.purple()
+                    elif color_lower == "gold":
+                        embed_color = discord.Color.gold()
+                    elif color_lower == "black":
+                        embed_color = discord.Color.default()
+                    elif color_lower == "white":
+                        embed_color = discord.Color.from_rgb(255, 255, 255)
+                    elif color_lower == "teal":
+                        embed_color = discord.Color.teal()
+                    elif color_lower == "magenta":
+                        embed_color = discord.Color.magenta()
+                    elif color_lower == "blurple":
+                        embed_color = discord.Color.blurple()
+                    elif color_lower == "dark_blue":
+                        embed_color = discord.Color.dark_blue()
+                    elif color_lower == "dark_green":
+                        embed_color = discord.Color.dark_green()
+                    elif color_lower == "dark_red":
+                        embed_color = discord.Color.dark_red()
+                    elif color_lower == "dark_purple":
+                        embed_color = discord.Color.dark_purple()
+                    elif color_lower == "dark_orange":
+                        embed_color = discord.Color.dark_orange()
+                    elif color_lower == "dark_gold":
+                        embed_color = discord.Color.dark_gold()
+                    elif color_lower == "dark_teal":
+                        embed_color = discord.Color.dark_teal()
+                    elif color_lower == "dark_magenta":
+                        embed_color = discord.Color.dark_magenta()
+            except ValueError:
+                # If color parsing fails, use default
+                embed_color = discord.Color.light_grey()
+                
+        return embed_color
+
+    @cclear.error
+    @reaction.error
+    @reactionremove.error
+    @embed.error
     @ban.error
     @kick.error
     @mute.error
@@ -1610,9 +1771,6 @@ class AdminCog(commands.Cog):
     @jail.error
     @unjail.error
     @clear.error
-    @cclear.error
-    @reaction.error
-    @reactionremove.error
     async def admin_command_error(self, ctx, error):
         if isinstance(error, commands.MissingPermissions):
             embed = discord.Embed(
@@ -1621,7 +1779,7 @@ class AdminCog(commands.Cog):
                 color=discord.Color.red()
             )
             await ctx.send(embed=embed)
-            return True  # Signal that we handled this error
+            return True
         elif isinstance(error, commands.MemberNotFound):
             embed = discord.Embed(
                 title="Error",
@@ -1629,7 +1787,7 @@ class AdminCog(commands.Cog):
                 color=discord.Color.red()
             )
             await ctx.send(embed=embed)
-            return True  # Signal that we handled this error
+            return True
         elif isinstance(error, commands.BadArgument):
             embed = discord.Embed(
                 title="Error",
@@ -1653,8 +1811,8 @@ class AdminCog(commands.Cog):
                 color=discord.Color.red()
             )
             await ctx.send(embed=embed)
-            return True  # Signal that we handled this error
-        return False  # Signal that we did not handle this error
+            return True
+        return False
 
 async def setup(client):
     await client.add_cog(AdminCog(client))
