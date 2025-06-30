@@ -6,13 +6,14 @@ from datetime import datetime, timedelta
 import time
 import re
 import asyncio
-from typing import Optional, Tuple
+from typing import Optional, Tuple, Dict, List
 import pytz
 import requests
 import io
 from PIL import Image, ImageDraw, ImageFont
 import textwrap
 import traceback
+import json
 
 class OtherCog(commands.Cog):
     def __init__(self, client):
@@ -26,6 +27,64 @@ class OtherCog(commands.Cog):
         # Font paths - we'll use default fonts if custom ones aren't available
         self.font_path = self.get_font_path()
         print(f"Font path: {self.font_path}")
+        
+        # Weather condition emoji mappings
+        self.weather_codes = {
+            # Clear
+            0: "☀️",  # Clear sky
+            
+            # Partly cloudy
+            1: "🌤️",  # Mainly clear
+            2: "⛅",   # Partly cloudy
+            3: "☁️",   # Overcast
+            
+            # Fog
+            45: "🌫️",  # Fog
+            48: "🌫️",  # Depositing rime fog
+            
+            # Drizzle
+            51: "🌦️",  # Light drizzle
+            53: "🌦️",  # Moderate drizzle
+            55: "🌧️",  # Dense drizzle
+            
+            # Freezing Drizzle
+            56: "🌨️",  # Light freezing drizzle
+            57: "🌨️",  # Dense freezing drizzle
+            
+            # Rain
+            61: "🌦️",  # Slight rain
+            63: "🌧️",  # Moderate rain
+            65: "🌧️",  # Heavy rain
+            
+            # Freezing Rain
+            66: "🌨️",  # Light freezing rain
+            67: "🌨️",  # Heavy freezing rain
+            
+            # Snow
+            71: "🌨️",  # Slight snow fall
+            73: "❄️",   # Moderate snow fall
+            75: "❄️",   # Heavy snow fall
+            
+            # Snow grains
+            77: "❄️",   # Snow grains
+            
+            # Rain showers
+            80: "🌦️",  # Slight rain showers
+            81: "🌧️",  # Moderate rain showers
+            82: "🌧️",  # Violent rain showers
+            
+            # Snow showers
+            85: "🌨️",  # Slight snow showers
+            86: "❄️",   # Heavy snow showers
+            
+            # Thunderstorm
+            95: "⛈️",   # Thunderstorm
+            96: "⛈️",   # Thunderstorm with slight hail
+            99: "⛈️",   # Thunderstorm with heavy hail
+            
+            # Default
+            -1: "🌡️"   # Default/unknown
+        }
     
     def parse_time(self, time_str: str, reason: str) -> Tuple[Optional[datetime], str]:
         """Parse various time formats and return a datetime object and the cleaned reason"""
@@ -294,18 +353,6 @@ class OtherCog(commands.Cog):
             
         await ctx.send(file=file)
 
-    @commands.command()
-    async def opl(self, ctx):
-        await ctx.send("https://habenwirmorgenopl.info (might be down)")
-    
-    @commands.command()
-    async def dsl(self, ctx):
-        await ctx.send("https://habenwirmorgenopl.info (might be down)")
-    
-    @commands.command()
-    async def ppl(self, ctx):
-        await ctx.send("https://habenwirmorgenopl.info (might be down)")
-    
     @commands.command()
     async def hwmo(self, ctx):
         await ctx.send("https://habenwirmorgenopl.info (might be down)")
@@ -766,4 +813,278 @@ class OtherCog(commands.Cog):
             await ctx.send(embed=embed)
         except Exception as e:
             await ctx.send(f"Error fetching server banner: {str(e)}")
+    
+    @commands.command(aliases=['fortune', 'cookie', 'fc'])
+    async def fortunecookie(self, ctx):
+        """Get a random fortune cookie message"""
+        try:
+            # Send a temporary message while fetching the fortune
+            temp_msg = await ctx.send("Breaking open a fortune cookie...")
+            
+            # Fetch a random fortune from the API
+            response = requests.get("https://api.viewbits.com/v1/fortunecookie?mode=random")
+            
+            if response.status_code != 200:
+                await temp_msg.edit(content="Failed to get a fortune cookie. Try again later.")
+                return
+                
+            # Parse the JSON response
+            fortune_data = response.json()
+            
+            # Extract only the fortune text
+            # Handle escaped unicode characters
+            fortune_text = fortune_data.get("text", "No fortune found")
+            # Replace common escaped characters
+            fortune_text = fortune_text.replace("\\u2019", "'").replace("\\u2018", "'")
+            fortune_text = fortune_text.replace("\\u201c", """).replace("\\u201d", """)
+            
+            # Create an embed for the fortune with only the quote
+            embed = discord.Embed(
+                title="🥠 Fortune Cookie",
+                description=f"**{fortune_text}**",
+                color=0xFFD700  # Gold color
+            )
+            
+            # Send the embed and delete the temporary message
+            await ctx.send(embed=embed)
+            await temp_msg.delete()
+            
+        except Exception as e:
+            await ctx.send(f"Error getting fortune cookie: {str(e)}")
+    
+    @commands.command()
+    async def set_weather_api_key(self, ctx, api_key: str):
+        """Set the OpenWeatherMap API key (admin only)"""
+        # Check if the user has admin permissions
+        if not ctx.author.guild_permissions.administrator:
+            await ctx.send("Only administrators can set the API key.")
+            return
+            
+        # Store the API key
+        self.weather_api_key = api_key
+        
+        # Delete the message to keep the API key private
+        try:
+            await ctx.message.delete()
+        except:
+            pass
+            
+        await ctx.send("Weather API key has been set successfully!", delete_after=5)
+    
+    def get_weather_emoji(self, weather_code: int) -> str:
+        """Get emoji for weather code"""
+        return self.weather_codes.get(weather_code, self.weather_codes[-1])
+    
+    async def geocode_location(self, location: str) -> Optional[Tuple[float, float, str, str]]:
+        """Convert location name to coordinates using Open-Meteo Geocoding API"""
+        try:
+            # URL encode the location
+            encoded_location = location.replace(" ", "+")
+            
+            # Make request to geocoding API
+            geocode_url = f"https://geocoding-api.open-meteo.com/v1/search?name={encoded_location}&count=1&language=en&format=json"
+            response = requests.get(geocode_url)
+            
+            if response.status_code != 200:
+                return None
+                
+            data = response.json()
+            
+            # Check if results were found
+            if not data.get("results"):
+                return None
+                
+            # Get the first result
+            result = data["results"][0]
+            
+            # Extract coordinates and location info
+            latitude = result["latitude"]
+            longitude = result["longitude"]
+            name = result["name"]
+            country = result.get("country", "")
+            
+            return (latitude, longitude, name, country)
+        except Exception:
+            return None
+    
+    def get_daily_weather_summary(self, hourly_data: Dict) -> List[Dict]:
+        """Process hourly data to get daily summaries"""
+        daily_summary = []
+        
+        # Get the hourly timestamps and convert to datetime objects
+        times = [datetime.fromisoformat(t.replace('Z', '+00:00')) for t in hourly_data["time"]]
+        
+        # Group by day
+        daily_data = {}
+        
+        for i, time in enumerate(times):
+            # Skip past hours of today
+            if time.date() < datetime.now().date():
+                continue
+                
+            # Convert to local date
+            date_str = time.date().isoformat()
+            
+            # Initialize if this is the first entry for this date
+            if date_str not in daily_data:
+                daily_data[date_str] = {
+                    "temp_min": float('inf'),
+                    "temp_max": float('-inf'),
+                    "weather_codes": [],
+                    "date": time.date()
+                }
+                
+            # Update min/max temps
+            temp = hourly_data["temperature_2m"][i]
+            if temp < daily_data[date_str]["temp_min"]:
+                daily_data[date_str]["temp_min"] = temp
+            if temp > daily_data[date_str]["temp_max"]:
+                daily_data[date_str]["temp_max"] = temp
+                
+            # If we have weather codes, add them
+            if "weather_code" in hourly_data:
+                daily_data[date_str]["weather_codes"].append(hourly_data["weather_code"][i])
+        
+        # Convert to list and sort by date
+        for date_str, data in daily_data.items():
+            # Find most common weather code for the day
+            if data["weather_codes"]:
+                # Count occurrences of each code
+                code_counts = {}
+                for code in data["weather_codes"]:
+                    if code not in code_counts:
+                        code_counts[code] = 0
+                    code_counts[code] += 1
+                    
+                most_common_code = max(code_counts, key=code_counts.get)
+            else:
+                most_common_code = -1  # Default/unknown
+                
+            daily_summary.append({
+                "date": data["date"],
+                "temp_min": round(data["temp_min"]),
+                "temp_max": round(data["temp_max"]),
+                "weather_code": most_common_code
+            })
+            
+        # Sort by date
+        daily_summary.sort(key=lambda x: x["date"])
+        
+        # Limit to 5 days
+        return daily_summary[:5]
+    
+    @commands.command()
+    async def weather(self, ctx, *, location: str = None):
+        """Get current weather and 5-day forecast for a location"""
+        if not location:
+            await ctx.send("Please provide a location. Example: `-weather London`")
+            return
+            
+        # Send a temporary message while fetching weather data
+        temp_msg = await ctx.send(f"Fetching weather data for {location}...")
+        
+        try:
+            # First, geocode the location to get coordinates
+            geocode_result = await self.geocode_location(location)
+            
+            if not geocode_result:
+                await temp_msg.edit(content=f"Couldn't find location: {location}")
+                return
+                
+            latitude, longitude, city_name, country = geocode_result
+            
+            # Fetch weather data from Open-Meteo API
+            weather_url = (
+                f"https://api.open-meteo.com/v1/forecast"
+                f"?latitude={latitude}&longitude={longitude}"
+                f"&current=temperature_2m,relative_humidity_2m,apparent_temperature,precipitation,weather_code,wind_speed_10m"
+                f"&hourly=temperature_2m,relative_humidity_2m,wind_speed_10m,weather_code"
+                f"&daily=temperature_2m_max,temperature_2m_min,weather_code"
+                f"&timezone=auto"
+            )
+            
+            response = requests.get(weather_url)
+            
+            if response.status_code != 200:
+                await temp_msg.edit(content="Error fetching weather data. Please try again later.")
+                return
+                
+            weather_data = response.json()
+            
+            # Process current weather data
+            current = weather_data["current"]
+            current_temp = round(current["temperature_2m"])
+            feels_like = round(current["apparent_temperature"])
+            humidity = current["relative_humidity_2m"]
+            wind_speed = current["wind_speed_10m"]
+            weather_code = current["weather_code"]
+            weather_emoji = self.get_weather_emoji(weather_code)
+            
+            # Get daily forecast
+            daily = weather_data["daily"]
+            
+            # Create embed for weather data
+            location_name = f"{city_name}, {country}" if country else city_name
+            embed = discord.Embed(
+                title=f"Weather for {location_name}",
+                description=f"**Current Conditions:** {weather_emoji} {current_temp}°C",
+                color=0x3498db
+            )
+            
+            # Add current weather information
+            embed.add_field(
+                name="Feels Like",
+                value=f"**{feels_like}°C**",
+                inline=True
+            )
+            
+            # Today's min/max from daily data
+            today_min = round(daily["temperature_2m_min"][0])
+            today_max = round(daily["temperature_2m_max"][0])
+            
+            embed.add_field(
+                name="Today's Range",
+                value=f"🔽 {today_min}°C / 🔼 {today_max}°C",
+                inline=True
+            )
+            
+            embed.add_field(
+                name="Humidity & Wind",
+                value=f"💧 {humidity}% | 💨 {wind_speed} km/h",
+                inline=True
+            )
+            
+            # Add 5-day forecast
+            forecast_text = ""
+            
+            # Start from tomorrow (index 1)
+            for i in range(1, min(6, len(daily["time"]))):
+                date_str = daily["time"][i]
+                dt = datetime.fromisoformat(date_str)
+                day_name = dt.strftime("%A")
+                
+                min_temp = round(daily["temperature_2m_min"][i])
+                max_temp = round(daily["temperature_2m_max"][i])
+                day_weather_code = daily["weather_code"][i]
+                day_emoji = self.get_weather_emoji(day_weather_code)
+                
+                forecast_text += f"{day_name}: {day_emoji} {min_temp}°C - {max_temp}°C\n"
+                
+            if forecast_text:
+                embed.add_field(
+                    name="5-Day Forecast",
+                    value=forecast_text,
+                    inline=False
+                )
+                
+            # Add timestamp
+            embed.set_footer(text=f"Last updated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+            
+            # Send the embed and delete the temporary message
+            await ctx.send(embed=embed)
+            await temp_msg.delete()
+            
+        except Exception as e:
+            await temp_msg.edit(content=f"Error getting weather data: {str(e)}")
+            print(f"Weather error: {traceback.format_exc()}")
     
