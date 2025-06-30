@@ -34,6 +34,33 @@ class OtherCog(commands.Cog):
         self.cooldown_time = 300  # 5 minutes in seconds
         self.daily_limit = 100  # Google's free tier limit
         
+        # For monkeytype command
+        self.active_typing_tests = {}  # Store user_id: {"words": [], "start_time": datetime, "message_id": int}
+        self.typing_challenges = {}  # Store challenge_id: {"challenger": user_id, "challenged": user_id, "word_count": int, "words": [], "results": {}}
+        self.pending_challenges = {}  # Store challenged_user_id: [list of challenge_ids]
+        self.common_words = [
+            "the", "be", "to", "of", "and", "a", "in", "that", "have", "I", "it", "for", "not", "on", "with", "he", "as", 
+            "you", "do", "at", "this", "but", "his", "by", "from", "they", "we", "say", "her", "she", "or", "an", "will", 
+            "my", "one", "all", "would", "there", "their", "what", "so", "up", "out", "if", "about", "who", "get", "which", 
+            "go", "me", "when", "make", "can", "like", "time", "no", "just", "him", "know", "take", "people", "into", "year", 
+            "your", "good", "some", "could", "them", "see", "other", "than", "then", "now", "look", "only", "come", "its", 
+            "over", "think", "also", "back", "after", "use", "two", "how", "our", "work", "first", "well", "way", "even", 
+            "new", "want", "because", "any", "these", "give", "day", "most", "us", "is", "was", "were", "are", "has", "had", 
+            "been", "being", "am", "did", "does", "doing", "done", "should", "must", "might", "may", "shall", "can", "could", 
+            "would", "should", "ought", "need", "dare", "used", "going", "let", "help", "keep", "try", "start", "stop", 
+            "begin", "end", "continue", "finish", "complete", "succeed", "fail", "win", "lose", "find", "search", "seek", 
+            "try", "attempt", "avoid", "achieve", "accomplish", "reach", "attain", "obtain", "acquire", "get", "gain", 
+            "earn", "receive", "accept", "reject", "refuse", "deny", "admit", "acknowledge", "recognize", "identify", 
+            "understand", "comprehend", "grasp", "know", "learn", "study", "teach", "instruct", "educate", "train", 
+            "develop", "improve", "enhance", "increase", "decrease", "reduce", "lower", "raise", "lift", "elevate", 
+            "climb", "ascend", "descend", "fall", "drop", "sink", "rise", "grow", "expand", "shrink", "contract", 
+            "condense", "compress", "squeeze", "stretch", "extend", "spread", "distribute", "gather", "collect", 
+            "accumulate", "amass", "assemble", "build", "construct", "create", "design", "develop", "invent", 
+            "discover", "explore", "investigate", "research", "analyze", "examine", "inspect", "observe", "watch", 
+            "monitor", "track", "follow", "lead", "guide", "direct", "manage", "control", "regulate", "govern", 
+            "rule", "dominate", "influence", "affect", "impact", "change", "alter", "modify", "transform"
+        ]
+        
         # Language codes for translation
         self.language_codes = {
             "af": "Afrikaans",
@@ -435,7 +462,235 @@ class OtherCog(commands.Cog):
                     color=0xFF0000
                 )
                 await message.channel.send(embed=embed)
-
+        
+        # Check if this is a response to a typing test
+        if message.author.id in self.active_typing_tests:
+            test_info = self.active_typing_tests[message.author.id]
+            
+            # Only process if the message is in the same channel as the test
+            if message.channel.id == test_info["channel_id"]:
+                # Calculate time elapsed
+                end_time = datetime.now()
+                elapsed_seconds = (end_time - test_info["start_time"]).total_seconds()
+                
+                # Get the original words and the typed words
+                original_words = test_info["words"]
+                typed_text = message.content.strip()
+                typed_words = typed_text.split()
+                
+                # Calculate accuracy
+                correct_chars = 0
+                total_chars = sum(len(word) for word in original_words)
+                original_text = " ".join(original_words)
+                
+                # Compare character by character
+                for i in range(min(len(original_text), len(typed_text))):
+                    if original_text[i] == typed_text[i]:
+                        correct_chars += 1
+                
+                # Calculate accuracy percentage - ensure it doesn't exceed 100%
+                accuracy = min(100, (correct_chars / total_chars) * 100) if total_chars > 0 else 0
+                
+                # Calculate words per minute (WPM)
+                # Standard: 5 characters = 1 word
+                standard_word_length = 5
+                characters_per_minute = (correct_chars / elapsed_seconds) * 60
+                wpm = characters_per_minute / standard_word_length
+                
+                # Create result object
+                result = {
+                    "wpm": wpm,
+                    "accuracy": accuracy,
+                    "time": elapsed_seconds,
+                    "correct_chars": correct_chars,
+                    "total_chars": total_chars
+                }
+                
+                # Check if this is part of a challenge
+                if "challenge_id" in test_info:
+                    challenge_id = test_info["challenge_id"]
+                    
+                    if challenge_id in self.typing_challenges:
+                        # Add the result to the challenge
+                        self.typing_challenges[challenge_id]["results"][message.author.id] = result
+                        
+                        # Check if both users have completed the challenge
+                        challenge = self.typing_challenges[challenge_id]
+                        
+                        if len(challenge["results"]) == 2:
+                            # Both users have completed the challenge, compare results
+                            await self.compare_challenge_results(message.channel, challenge_id)
+                            
+                            # Delete the challenge
+                            del self.typing_challenges[challenge_id]
+                        else:
+                            # Only one user has completed the challenge
+                            # Create result embed for the individual
+                            embed = self.create_typing_result_embed(result, message.author)
+                            
+                            # Add challenge info
+                            embed.add_field(
+                                name="Challenge Status",
+                                value="Waiting for opponent to complete the test...",
+                                inline=False
+                            )
+                            
+                            await message.channel.send(embed=embed)
+                    else:
+                        # Challenge doesn't exist anymore, show individual result
+                        embed = self.create_typing_result_embed(result, message.author)
+                        await message.channel.send(embed=embed)
+                else:
+                    # Regular typing test, show result
+                    embed = self.create_typing_result_embed(result, message.author)
+                    await message.channel.send(embed=embed)
+                
+                # Remove the test from active tests
+                del self.active_typing_tests[message.author.id]
+    
+    def create_typing_result_embed(self, result, user):
+        """Create an embed for typing test results"""
+        embed = discord.Embed(
+            title="⌨️ Typing Test Results",
+            color=0x00FF00 if result["accuracy"] > 90 else (0xFFFF00 if result["accuracy"] > 75 else 0xFF0000)
+        )
+        
+        # Add fields with results
+        embed.add_field(
+            name="Speed",
+            value=f"**{result['wpm']:.1f}** WPM",
+            inline=True
+        )
+        
+        embed.add_field(
+            name="Accuracy",
+            value=f"**{result['accuracy']:.1f}%**",
+            inline=True
+        )
+        
+        embed.add_field(
+            name="Time",
+            value=f"**{result['time']:.1f}** seconds",
+            inline=True
+        )
+        
+        # Add correct/incorrect character counts
+        embed.add_field(
+            name="Characters",
+            value=f"Correct: **{result['correct_chars']}** / Total: **{result['total_chars']}**",
+            inline=False
+        )
+        
+        # Add a rating based on WPM
+        rating = ""
+        if result["wpm"] < 20:
+            rating = "Beginner - Keep practicing!"
+        elif result["wpm"] < 40:
+            rating = "Average - You're getting there!"
+        elif result["wpm"] < 60:
+            rating = "Good - Above average typing speed!"
+        elif result["wpm"] < 80:
+            rating = "Fast - Very good typing speed!"
+        elif result["wpm"] < 100:
+            rating = "Expert - Impressive typing skills!"
+        else:
+            rating = "Master - Professional level typing!"
+        
+        embed.add_field(
+            name="Rating",
+            value=rating,
+            inline=False
+        )
+        
+        embed.set_footer(text=f"Typing test completed by {user.display_name}")
+        
+        return embed
+    
+    async def compare_challenge_results(self, channel, challenge_id):
+        """Compare and display the results of a typing challenge"""
+        challenge = self.typing_challenges[challenge_id]
+        
+        # Get the users
+        try:
+            challenger = await self.client.fetch_user(challenge["challenger"])
+            challenged = await self.client.fetch_user(challenge["challenged"])
+        except:
+            await channel.send("Could not find the users for this challenge.")
+            return
+            
+        # Get the results
+        challenger_result = challenge["results"][challenger.id]
+        challenged_result = challenge["results"][challenged.id]
+        
+        # Determine the winner based on WPM
+        if challenger_result["wpm"] > challenged_result["wpm"]:
+            winner = challenger
+            winner_result = challenger_result
+            loser = challenged
+            loser_result = challenged_result
+        else:
+            winner = challenged
+            winner_result = challenged_result
+            loser = challenger
+            loser_result = challenger_result
+        
+        # Calculate the difference
+        wpm_diff = abs(challenger_result["wpm"] - challenged_result["wpm"])
+        accuracy_diff = abs(challenger_result["accuracy"] - challenged_result["accuracy"])
+        
+        # Create embed for the results
+        embed = discord.Embed(
+            title="⚔️ Typing Challenge Results",
+            description=f"**{winner.display_name}** wins the typing challenge!",
+            color=0xFFD700  # Gold
+        )
+        
+        # Add winner's results
+        embed.add_field(
+            name=f"{winner.display_name}'s Results",
+            value=f"• Speed: **{winner_result['wpm']:.1f}** WPM\n"
+                 f"• Accuracy: **{winner_result['accuracy']:.1f}%**\n"
+                 f"• Time: **{winner_result['time']:.1f}s**",
+            inline=True
+        )
+        
+        # Add loser's results
+        embed.add_field(
+            name=f"{loser.display_name}'s Results",
+            value=f"• Speed: **{loser_result['wpm']:.1f}** WPM\n"
+                 f"• Accuracy: **{loser_result['accuracy']:.1f}%**\n"
+                 f"• Time: **{loser_result['time']:.1f}s**",
+            inline=True
+        )
+        
+        # Add difference
+        embed.add_field(
+            name="Difference",
+            value=f"• Speed: **{wpm_diff:.1f}** WPM\n"
+                 f"• Accuracy: **{accuracy_diff:.1f}%**",
+            inline=False
+        )
+        
+        # Add a fun message based on the difference
+        if wpm_diff < 5:
+            message = "A very close match! Both typists are evenly matched."
+        elif wpm_diff < 15:
+            message = f"{winner.display_name} has a slight edge in typing speed."
+        elif wpm_diff < 30:
+            message = f"{winner.display_name} is notably faster than {loser.display_name}."
+        else:
+            message = f"{winner.display_name} completely outclassed {loser.display_name} in this challenge!"
+            
+        embed.add_field(
+            name="Analysis",
+            value=message,
+            inline=False
+        )
+        
+        embed.set_footer(text=f"Challenge completed | {challenge['word_count']} words")
+        
+        await channel.send(embed=embed)
+    
     @commands.command()
     async def code(self, ctx):
         await ctx.send("zgte5dr6ftgzhujikokztrdeswa536edfr65fm ,WU83 34 FTZFTBFTBF7677U6")
@@ -2133,4 +2388,527 @@ class OtherCog(commands.Cog):
                 except Exception as e:
                     print(f"Error in language pagination: {str(e)}")
                     break
+    
+    @commands.command(aliases=['mt', 'type'])
+    async def monkeytype(self, ctx, word_count: int = 30):
+        """Start a typing test with the specified number of words"""
+        # Validate word count
+        if word_count < 10:
+            await ctx.send("Please specify at least 10 words for the typing test.")
+            return
+        if word_count > 250:
+            await ctx.send("Please specify at most 250 words for the typing test.")
+            return
+            
+        # Generate random words
+        selected_words = random.sample(self.common_words, min(len(self.common_words), word_count))
+        
+        # Create image with the words
+        image_buffer = await self.create_typing_test_image(selected_words)
+        
+        if not image_buffer:
+            await ctx.send("Failed to create typing test image. Please try again.")
+            return
+            
+        # Create embed for the typing test
+        embed = discord.Embed(
+            title="🖮 Monkeytype Typing Test",
+            description=f"Type the following {word_count} words as fast and accurately as possible.",
+            color=0x00FFFF
+        )
+        
+        embed.add_field(
+            name="Instructions",
+            value="• Type all words in a single message\n"
+                 "• Be careful with capitalization and punctuation\n"
+                 "• The timer starts when you see the image\n"
+                 "• Your typing speed and accuracy will be calculated",
+            inline=False
+        )
+        
+        embed.set_footer(text=f"Typing test for {ctx.author.display_name} | {word_count} words")
+        
+        # Send the embed with the image
+        test_msg = await ctx.send(
+            embed=embed,
+            file=discord.File(fp=image_buffer, filename='typing_test.png')
+        )
+        
+        # Store the test information
+        self.active_typing_tests[ctx.author.id] = {
+            "words": selected_words,
+            "start_time": datetime.now(),
+            "message_id": test_msg.id,
+            "channel_id": ctx.channel.id
+        }
+        
+        # Notify the user that the test has started
+        await ctx.send(f"{ctx.author.mention} Your typing test has started! Type the words shown in the image.")
+    
+    @commands.command(aliases=['mtc', 'challenge'])
+    async def mtchallenge(self, ctx, user: discord.Member, word_count: int = 30):
+        """Challenge another user to a typing test"""
+        # Check if the user is challenging themselves
+        if user.id == ctx.author.id:
+            await ctx.send("You can't challenge yourself!")
+            return
+            
+        # Check if the user is a bot
+        if user.bot:
+            await ctx.send("You can't challenge a bot!")
+            return
+            
+        # Validate word count
+        if word_count < 10:
+            await ctx.send("Please specify at least 10 words for the typing test.")
+            return
+        if word_count > 250:
+            await ctx.send("Please specify at most 250 words for the typing test.")
+            return
+            
+        # Generate a unique challenge ID
+        challenge_id = f"{ctx.author.id}-{user.id}-{int(time.time())}"
+        
+        # Generate random words for the challenge
+        selected_words = random.sample(self.common_words, min(len(self.common_words), word_count))
+        
+        # Store the challenge information
+        self.typing_challenges[challenge_id] = {
+            "challenger": ctx.author.id,
+            "challenged": user.id,
+            "word_count": word_count,
+            "words": selected_words,
+            "results": {},
+            "channel_id": ctx.channel.id,
+            "created_at": datetime.now()
+        }
+        
+        # Add to pending challenges
+        if user.id not in self.pending_challenges:
+            self.pending_challenges[user.id] = []
+        self.pending_challenges[user.id].append(challenge_id)
+        
+        # Create embed for the challenge
+        embed = discord.Embed(
+            title="⚔️ Typing Challenge!",
+            description=f"{ctx.author.mention} has challenged {user.mention} to a typing test!",
+            color=0xFF9900
+        )
+        
+        embed.add_field(
+            name="Details",
+            value=f"• {word_count} words\n"
+                 f"• Both users will type the same text\n"
+                 f"• Speed and accuracy will be compared",
+            inline=False
+        )
+        
+        embed.add_field(
+            name="How to Accept",
+            value=f"{user.mention}, type `-accept` to accept the challenge!",
+            inline=False
+        )
+        
+        embed.set_footer(text=f"Challenge ID: {challenge_id} | Expires in 10 minutes")
+        
+        # Send the challenge
+        await ctx.send(embed=embed)
+        
+        # Set a timer to delete the challenge if not accepted
+        self.client.loop.create_task(self.delete_challenge_after_timeout(challenge_id, 600))  # 10 minutes
+    
+    async def delete_challenge_after_timeout(self, challenge_id, timeout):
+        """Delete a challenge after a timeout period"""
+        await asyncio.sleep(timeout)
+        
+        # Check if the challenge still exists
+        if challenge_id in self.typing_challenges:
+            challenge = self.typing_challenges[challenge_id]
+            
+            # If the challenge hasn't been started by both users, delete it
+            if len(challenge["results"]) < 2:
+                # Get the channel
+                channel = self.client.get_channel(challenge["channel_id"])
+                
+                if channel:
+                    # Get the users
+                    try:
+                        challenger = await self.client.fetch_user(challenge["challenger"])
+                        challenged = await self.client.fetch_user(challenge["challenged"])
+                        
+                        # Send a timeout message
+                        await channel.send(f"⏰ The typing challenge between {challenger.mention} and {challenged.mention} has expired.")
+                    except:
+                        pass
+                
+                # Remove from pending challenges
+                if challenge["challenged"] in self.pending_challenges:
+                    if challenge_id in self.pending_challenges[challenge["challenged"]]:
+                        self.pending_challenges[challenge["challenged"]].remove(challenge_id)
+                        
+                        if not self.pending_challenges[challenge["challenged"]]:
+                            del self.pending_challenges[challenge["challenged"]]
+                
+                # Delete the challenge
+                del self.typing_challenges[challenge_id]
+    
+    @commands.command()
+    async def accept(self, ctx, challenge_id: str = None):
+        """Accept a typing challenge"""
+        # If no challenge_id is provided, check if the user has any pending challenges
+        if not challenge_id:
+            if ctx.author.id not in self.pending_challenges or not self.pending_challenges[ctx.author.id]:
+                await ctx.send("You don't have any pending typing challenges. Please provide a challenge ID.")
+                return
+            
+            # Use the most recent challenge
+            challenge_id = self.pending_challenges[ctx.author.id][-1]
+        
+        # Check if the challenge exists
+        if challenge_id not in self.typing_challenges:
+            await ctx.send("This challenge doesn't exist or has expired.")
+            return
+            
+        challenge = self.typing_challenges[challenge_id]
+        
+        # Check if the user is the one being challenged
+        if ctx.author.id != challenge["challenged"]:
+            await ctx.send("This challenge is not for you.")
+            return
+            
+        # Check if the challenge has already been accepted
+        if ctx.author.id in challenge["results"]:
+            await ctx.send("You've already accepted this challenge.")
+            return
+            
+        # Remove from pending challenges
+        if ctx.author.id in self.pending_challenges and challenge_id in self.pending_challenges[ctx.author.id]:
+            self.pending_challenges[ctx.author.id].remove(challenge_id)
+            
+            if not self.pending_challenges[ctx.author.id]:
+                del self.pending_challenges[ctx.author.id]
+        
+        # Get the challenger
+        try:
+            challenger = await self.client.fetch_user(challenge["challenger"])
+        except:
+            await ctx.send("Could not find the challenger. The challenge has been cancelled.")
+            del self.typing_challenges[challenge_id]
+            return
+        
+        # Send a notification that the challenge has been accepted
+        embed = discord.Embed(
+            title="⚔️ Challenge Accepted!",
+            description=f"{ctx.author.mention} has accepted {challenger.mention}'s typing challenge!",
+            color=0xFF9900
+        )
+        
+        embed.add_field(
+            name="Get Ready!",
+            value="The typing test will begin shortly. Both users will see the same text.",
+            inline=False
+        )
+        
+        await ctx.send(embed=embed)
+        
+        # Start the countdown
+        countdown_msg = await ctx.send("Starting in 5...")
+        
+        for i in range(4, 0, -1):
+            await asyncio.sleep(1)
+            await countdown_msg.edit(content=f"Starting in {i}...")
+        
+        await asyncio.sleep(1)
+        await countdown_msg.edit(content="Go!")
+        
+        # Create image with the words
+        image_buffer = await self.create_typing_test_image(challenge["words"])
+        
+        if not image_buffer:
+            await ctx.send("Failed to create typing test image. Please try again.")
+            return
+            
+        # Create embed for the typing test
+        embed = discord.Embed(
+            title="⚔️ Challenge Typing Test",
+            description=f"Type the following {challenge['word_count']} words as fast and accurately as possible.",
+            color=0xFF9900
+        )
+        
+        embed.add_field(
+            name="Instructions",
+            value="• Type all words in a single message\n"
+                 "• Be careful with capitalization and punctuation\n"
+                 "• The timer starts now\n"
+                 "• Your results will be compared with your opponent",
+            inline=False
+        )
+        
+        embed.add_field(
+            name="Challenge",
+            value=f"{challenger.mention} vs {ctx.author.mention}",
+            inline=False
+        )
+        
+        embed.set_footer(text=f"Challenge ID: {challenge_id}")
+        
+        # Send the embed with the image to both users in the same channel
+        test_msg = await ctx.send(
+            content=f"{challenger.mention} {ctx.author.mention}",
+            embed=embed,
+            file=discord.File(fp=image_buffer, filename='challenge_test.png')
+        )
+        
+        # Store the test information in active typing tests for both users
+        current_time = datetime.now()
+        
+        # For the challenged user
+        self.active_typing_tests[ctx.author.id] = {
+            "words": challenge["words"],
+            "start_time": current_time,
+            "message_id": test_msg.id,
+            "channel_id": ctx.channel.id,
+            "challenge_id": challenge_id
+        }
+        
+        # For the challenger
+        self.active_typing_tests[challenger.id] = {
+            "words": challenge["words"],
+            "start_time": current_time,
+            "message_id": test_msg.id,
+            "channel_id": ctx.channel.id,
+            "challenge_id": challenge_id
+        }
+        
+        # Notify both users that the test has started
+        await ctx.send(f"The typing test has started! {challenger.mention} and {ctx.author.mention}, type the words shown in the image.")
+    
+    @commands.Cog.listener()
+    async def on_interaction(self, interaction):
+        """Handle button interactions"""
+        if not interaction.data or "custom_id" not in interaction.data:
+            return
+            
+        custom_id = interaction.data["custom_id"]
+        
+        # Check if this is a challenge start button
+        if custom_id.startswith("start_challenge_"):
+            challenge_id = custom_id.replace("start_challenge_", "")
+            
+            # Check if the challenge exists
+            if challenge_id not in self.typing_challenges:
+                await interaction.response.send_message("This challenge doesn't exist or has expired.", ephemeral=True)
+                return
+                
+            challenge = self.typing_challenges[challenge_id]
+            
+            # Check if the user is the challenger
+            if interaction.user.id != challenge["challenger"]:
+                await interaction.response.send_message("This challenge is not for you.", ephemeral=True)
+                return
+                
+            # Check if the challenger has already taken the test
+            if interaction.user.id in challenge["results"]:
+                await interaction.response.send_message("You've already taken this challenge test.", ephemeral=True)
+                return
+                
+            # Create image with the words
+            image_buffer = await self.create_typing_test_image(challenge["words"])
+            
+            if not image_buffer:
+                await interaction.response.send_message("Failed to create typing test image. Please try again.", ephemeral=True)
+                return
+                
+            # Acknowledge the interaction
+            await interaction.response.defer()
+                
+            # Create embed for the typing test
+            embed = discord.Embed(
+                title="⚔️ Challenge Typing Test",
+                description=f"Type the following {challenge['word_count']} words as fast and accurately as possible.",
+                color=0xFF9900
+            )
+            
+            embed.add_field(
+                name="Instructions",
+                value="• Type all words in a single message\n"
+                     "• Be careful with capitalization and punctuation\n"
+                     "• The timer starts when you see the image\n"
+                     "• Your results will be compared with your opponent",
+                inline=False
+            )
+            
+            # Get the challenged user
+            try:
+                challenged = await self.client.fetch_user(challenge["challenged"])
+                embed.add_field(
+                    name="Challenge",
+                    value=f"{interaction.user.mention} vs {challenged.mention}",
+                    inline=False
+                )
+            except:
+                embed.add_field(
+                    name="Challenge",
+                    value=f"Typing challenge",
+                    inline=False
+                )
+            
+            embed.set_footer(text=f"Challenge ID: {challenge_id}")
+            
+            # Send the embed with the image
+            test_msg = await interaction.followup.send(
+                embed=embed,
+                file=discord.File(fp=image_buffer, filename='challenge_test.png')
+            )
+            
+            # Store the test information in active typing tests
+            self.active_typing_tests[interaction.user.id] = {
+                "words": challenge["words"],
+                "start_time": datetime.now(),
+                "message_id": test_msg.id,
+                "channel_id": interaction.channel_id,
+                "challenge_id": challenge_id
+            }
+            
+            # Notify the user that the test has started
+            await interaction.followup.send(f"{interaction.user.mention} Your challenge typing test has started! Type the words shown in the image.")
+    
+    @commands.command(aliases=['mtl', 'challenges'])
+    async def mtlist(self, ctx):
+        """List your pending typing challenges"""
+        if ctx.author.id not in self.pending_challenges or not self.pending_challenges[ctx.author.id]:
+            await ctx.send("You don't have any pending typing challenges.")
+            return
+            
+        # Create embed for the pending challenges
+        embed = discord.Embed(
+            title="📝 Your Pending Typing Challenges",
+            color=0xFF9900
+        )
+        
+        for challenge_id in self.pending_challenges[ctx.author.id]:
+            if challenge_id in self.typing_challenges:
+                challenge = self.typing_challenges[challenge_id]
+                
+                # Get the challenger
+                try:
+                    challenger = await self.client.fetch_user(challenge["challenger"])
+                    challenger_name = challenger.display_name
+                except:
+                    challenger_name = "Unknown User"
+                    
+                # Calculate time left
+                time_created = challenge["created_at"]
+                time_left = 600 - (datetime.now() - time_created).total_seconds()
+                
+                if time_left <= 0:
+                    # This challenge should be deleted soon by the timeout task
+                    continue
+                    
+                minutes_left = int(time_left / 60)
+                seconds_left = int(time_left % 60)
+                
+                embed.add_field(
+                    name=f"Challenge from {challenger_name}",
+                    value=f"• {challenge['word_count']} words\n"
+                         f"• Expires in {minutes_left}m {seconds_left}s\n"
+                         f"• To accept: `-accept {challenge_id}`",
+                    inline=False
+                )
+        
+        if not embed.fields:
+            await ctx.send("You don't have any pending typing challenges.")
+            return
+            
+        await ctx.send(embed=embed)
+    
+    async def create_typing_test_image(self, words):
+        """Create an image with the words for the typing test"""
+        try:
+            # Create a blank image with white background
+            width = 1000
+            height = 600
+            image = Image.new('RGB', (width, height), (255, 255, 255))
+            draw = ImageDraw.Draw(image)
+            
+            # Try to find a system font
+            system_fonts = [
+                '/usr/share/fonts/TTF/DejaVuSans.ttf',  # Linux
+                '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',  # Ubuntu
+                '/Library/Fonts/Arial.ttf',  # macOS
+                'C:\\Windows\\Fonts\\arial.ttf',  # Windows
+                self.font_path
+            ]
+            
+            font_path = None
+            for font in system_fonts:
+                if font and os.path.exists(font):
+                    font_path = font
+                    break
+                    
+            # Use default font if none found
+            if not font_path:
+                # Add text using default font
+                text = " ".join(words)
+                lines = textwrap.wrap(text, width=40)
+                y_position = 50
+                
+                for line in lines:
+                    draw.text((50, y_position), line, fill=(0, 0, 0), font=ImageFont.load_default())
+                    y_position += 20
+            else:
+                # Use custom font
+                font_size = 24
+                font = ImageFont.truetype(font_path, font_size)
+                
+                # Join words with spaces
+                text = " ".join(words)
+                
+                # Wrap text to fit the image width
+                lines = []
+                current_line = []
+                current_width = 0
+                max_width = width - 100  # Leave some margin
+                
+                for word in words:
+                    # Get word dimensions
+                    word_bbox = draw.textbbox((0, 0), word + " ", font=font)
+                    word_width = word_bbox[2] - word_bbox[0]
+                    
+                    if current_width + word_width <= max_width:
+                        current_line.append(word)
+                        current_width += word_width
+                    else:
+                        lines.append(" ".join(current_line))
+                        current_line = [word]
+                        current_width = word_width
+                
+                # Add the last line
+                if current_line:
+                    lines.append(" ".join(current_line))
+                
+                # Draw the text
+                y_position = 50
+                for line in lines:
+                    draw.text((50, y_position), line, fill=(0, 0, 0), font=font)
+                    y_position += font_size * 1.5
+                    
+                # Add some visual noise to prevent OCR
+                for _ in range(30):
+                    x1 = random.randint(0, width)
+                    y1 = random.randint(0, height)
+                    x2 = random.randint(0, width)
+                    y2 = random.randint(0, height)
+                    color = (random.randint(100, 200), random.randint(100, 200), random.randint(100, 200))
+                    draw.line([(x1, y1), (x2, y2)], fill=color, width=2)
+            
+            # Save the image to a bytes buffer
+            buffer = io.BytesIO()
+            image.save(buffer, format='PNG')
+            buffer.seek(0)
+            
+            return buffer
+        except Exception as e:
+            print(f"Error creating typing test image: {str(e)}")
+            return None
     
