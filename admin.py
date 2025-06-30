@@ -32,6 +32,9 @@ class AdminCog(commands.Cog):
         # Nickname history file path
         self.nickname_file = self.data_dir / "nickname_history.json"
         
+        # Auto reactions file path
+        self.reactions_file = self.data_dir / "auto_reactions.json"
+        
         # Initialize role saving task
         self.role_save_task = None
         self.last_save_time = None
@@ -42,6 +45,9 @@ class AdminCog(commands.Cog):
         
         # Initialize nickname history
         self.load_nickname_history()
+        
+        # Initialize auto reactions
+        self.auto_reactions = self.load_auto_reactions()
 
     def cog_unload(self):
         # Cancel the role save task when the cog is unloaded
@@ -983,6 +989,120 @@ class AdminCog(commands.Cog):
 
     @commands.command()
     @has_permissions(administrator=True)
+    async def reaction(self, ctx, term: str = None, emoji: str = None):
+        """Set up an auto reaction for a specific term
+        
+        Usage:
+        !reaction [term] [emoji] - Add a new auto reaction
+        !reaction list - List all auto reactions
+        !reaction remove [term] - Remove an auto reaction
+        """
+        if term is None:
+            await ctx.send("Usage: `!reaction [term] [emoji]` or `!reaction list` or `!reaction remove [term]`")
+            return
+            
+        guild_id = str(ctx.guild.id)
+        
+        # Initialize guild section if not exists
+        if guild_id not in self.auto_reactions:
+            self.auto_reactions[guild_id] = {}
+            
+        # List all reactions
+        if term.lower() == "list":
+            if not self.auto_reactions.get(guild_id):
+                await ctx.send("No auto reactions set up for this server.")
+                return
+                
+            embed = discord.Embed(
+                title="Auto Reactions",
+                description="Terms that trigger auto reactions",
+                color=discord.Color.blue()
+            )
+            
+            for term, emoji in self.auto_reactions[guild_id].items():
+                embed.add_field(name=term, value=emoji, inline=True)
+                
+            await ctx.send(embed=embed)
+            return
+            
+        # Remove a reaction
+        if term.lower() == "remove":
+            if emoji is None:
+                await ctx.send("Please specify a term to remove.")
+                return
+                
+            if emoji in self.auto_reactions.get(guild_id, {}):
+                del self.auto_reactions[guild_id][emoji]
+                self.save_auto_reactions()
+                await ctx.send(f"Removed auto reaction for term: `{emoji}`")
+            else:
+                await ctx.send(f"No auto reaction found for term: `{emoji}`")
+            return
+            
+        # Add new reaction
+        if emoji is None:
+            await ctx.send("Please provide both a term and an emoji.")
+            return
+            
+        # Try to find the emoji in the server
+        try:
+            # Check if it's a custom emoji
+            if emoji.startswith('<:') and emoji.endswith('>'):
+                emoji_id = int(emoji.split(':')[2][:-1])
+                emoji_obj = discord.utils.get(ctx.guild.emojis, id=emoji_id)
+                if emoji_obj is None:
+                    await ctx.send(f"Emoji {emoji} not found in this server. The bot must have access to the emoji.")
+                    return
+            # Test if it's a Unicode emoji by trying to add it as a reaction
+            else:
+                test_msg = await ctx.send("Testing emoji...")
+                try:
+                    await test_msg.add_reaction(emoji)
+                    await test_msg.delete()
+                except discord.errors.HTTPException:
+                    await test_msg.delete()
+                    await ctx.send(f"Invalid emoji: {emoji}")
+                    return
+                    
+            # Add the reaction to our dictionary
+            self.auto_reactions[guild_id][term] = emoji
+            self.save_auto_reactions()
+            
+            await ctx.send(f"Added auto reaction: When someone mentions `{term}`, I'll react with {emoji}")
+            
+        except Exception as e:
+            await ctx.send(f"Error setting up auto reaction: {str(e)}")
+    
+    @commands.command()
+    @has_permissions(administrator=True)
+    async def reactionremove(self, ctx, *, term: str = None):
+        """Remove an auto reaction for a specific term
+        
+        Usage:
+        !reactionremove [term] - Remove the auto reaction for the specified term
+        """
+        if term is None:
+            await ctx.send("Please specify a term to remove: `!reactionremove [term]`")
+            return
+            
+        guild_id = str(ctx.guild.id)
+        
+        # Check if guild has any reactions
+        if guild_id not in self.auto_reactions or not self.auto_reactions[guild_id]:
+            await ctx.send("No auto reactions set up for this server.")
+            return
+            
+        # Check if term exists
+        if term in self.auto_reactions[guild_id]:
+            emoji = self.auto_reactions[guild_id][term]
+            del self.auto_reactions[guild_id][term]
+            self.save_auto_reactions()
+            await ctx.send(f"Removed auto reaction: `{term}` → {emoji}")
+        else:
+            await ctx.send(f"No auto reaction found for term: `{term}`")
+    
+    @commands.command()
+    @has_permissions(administrator=True)
     async def unjail(self, ctx, member: discord.Member, time: str = None):
         """Temporarily release a user from jail for specified duration (e.g., '30s', '5m', '2h', '7d') or permanently if no time specified"""
         try:
@@ -1421,6 +1541,31 @@ class AdminCog(commands.Cog):
         )
         await ctx.send(embed=embed)
 
+    def load_auto_reactions(self):
+        """Load auto reactions from JSON file"""
+        try:
+            if os.path.exists(self.reactions_file):
+                with open(self.reactions_file, 'r') as f:
+                    return json.load(f)
+            else:
+                # Create empty auto reactions file
+                with open(self.reactions_file, 'w') as f:
+                    json.dump({}, f)
+                return {}
+        except Exception as e:
+            print(f"Error loading auto reactions: {e}")
+            return {}
+
+    def save_auto_reactions(self):
+        """Save auto reactions to JSON file"""
+        try:
+            with open(self.reactions_file, 'w') as f:
+                json.dump(self.auto_reactions, f, indent=2)
+            return True
+        except Exception as e:
+            print(f"Error saving auto reactions: {e}")
+            return False
+            
     def is_cache_recent(self):
         """Check if cache exists and is less than 24 hours old"""
         try:
@@ -1435,6 +1580,25 @@ class AdminCog(commands.Cog):
         except:
             return False
 
+    @commands.Cog.listener()
+    async def on_message(self, message):
+        # Ignore messages from bots
+        if message.author.bot:
+            return
+            
+        # Check if we have auto reactions for this guild
+        guild_id = str(message.guild.id) if message.guild else None
+        if not guild_id or guild_id not in self.auto_reactions:
+            return
+            
+        # Check message content for trigger terms
+        for term, emoji in self.auto_reactions[guild_id].items():
+            if term.lower() in message.content.lower():
+                try:
+                    await message.add_reaction(emoji)
+                except Exception as e:
+                    print(f"Error adding reaction {emoji}: {e}")
+    
     @ban.error
     @kick.error
     @mute.error
@@ -1447,6 +1611,8 @@ class AdminCog(commands.Cog):
     @unjail.error
     @clear.error
     @cclear.error
+    @reaction.error
+    @reactionremove.error
     async def admin_command_error(self, ctx, error):
         if isinstance(error, commands.MissingPermissions):
             embed = discord.Embed(
