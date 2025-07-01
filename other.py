@@ -15,6 +15,7 @@ import textwrap
 import traceback
 import json
 import collections
+import base64
 
 class OtherCog(commands.Cog):
     def __init__(self, client):
@@ -33,6 +34,14 @@ class OtherCog(commands.Cog):
         self.user_cooldowns = {}  # Store user_id: last_use_timestamp
         self.cooldown_time = 300  # 5 minutes in seconds
         self.daily_limit = 100  # Google's free tier limit
+        
+        # For AI command
+        self.deepseek_api_key = os.getenv("DEEPSEEK_API_KEY", "")
+        self.ai_user_cooldowns = {}  # Store user_id: last_use_timestamp
+        self.ai_cooldown_time = 30  # 30 seconds cooldown
+        self.ai_daily_usage = {}  # Store user_id: count
+        self.ai_daily_limit = 30  # 30 requests per day
+        self.ai_last_reset = datetime.now()  # When the count was last reset
         
         # For monkeytype command
         self.active_typing_tests = {}  # Store user_id: {"words": [], "start_time": datetime, "message_id": int}
@@ -1516,6 +1525,51 @@ class OtherCog(commands.Cog):
         self.user_cooldowns[user_id] = now
         return False, 0
     
+    def check_ai_reset_daily_count(self):
+        """Check if we need to reset the daily AI usage count"""
+        now = datetime.now()
+        # Reset count if it's a new day
+        if now.date() > self.ai_last_reset.date():
+            self.ai_daily_usage = {}  # Reset all users' counts
+            self.ai_last_reset = now
+            return True
+        return False
+    
+    def check_ai_user_limit(self, user_id: int) -> bool:
+        """Check if a user has reached their daily AI usage limit
+        
+        Returns:
+            bool: True if limit exceeded, False otherwise
+        """
+        self.check_ai_reset_daily_count()
+        
+        # Initialize if this is the first request of the day
+        if user_id not in self.ai_daily_usage:
+            self.ai_daily_usage[user_id] = 0
+            
+        # Increment and check
+        self.ai_daily_usage[user_id] += 1
+        return self.ai_daily_usage[user_id] > self.ai_daily_limit
+    
+    def check_ai_cooldown(self, user_id: int) -> Tuple[bool, int]:
+        """Check if a user is on AI cooldown
+        
+        Returns:
+            Tuple[bool, int]: (is_on_cooldown, seconds_remaining)
+        """
+        now = time.time()
+        
+        if user_id in self.ai_user_cooldowns:
+            last_use = self.ai_user_cooldowns[user_id]
+            elapsed = now - last_use
+            
+            if elapsed < self.ai_cooldown_time:
+                return True, int(self.ai_cooldown_time - elapsed)
+        
+        # Update the last use time
+        self.ai_user_cooldowns[user_id] = now
+        return False, 0
+    
     @commands.command()
     async def set_google_api_key(self, ctx, api_key: str):
         """Set the Google API key (admin only)"""
@@ -1967,6 +2021,399 @@ class OtherCog(commands.Cog):
         
         await ctx.send("✅ Daily search count has been reset.")
     
+    @commands.command()
+    async def set_deepseek_api_key(self, ctx, api_key: str):
+        """Set the DeepSeek API key (admin only)"""
+        # Check if the user has admin permissions
+        if not ctx.author.guild_permissions.administrator:
+            await ctx.send("Only administrators can set the API key.")
+            return
+            
+        # Store the API key
+        self.deepseek_api_key = api_key
+        
+        # Delete the message to keep the API key private
+        try:
+            await ctx.message.delete()
+        except:
+            pass
+            
+        await ctx.send("DeepSeek API key has been set successfully!", delete_after=5)
+    
+    @commands.command()
+    async def ai_reset_cooldowns(self, ctx):
+        """Reset all AI user cooldowns (admin only)"""
+        # Check if the user has admin permissions
+        if not ctx.author.guild_permissions.administrator:
+            await ctx.send("Only administrators can reset cooldowns.")
+            return
+            
+        # Reset all cooldowns
+        self.ai_user_cooldowns.clear()
+        
+        await ctx.send("✅ All AI user cooldowns have been reset.")
+    
+    @commands.command()
+    async def ai_reset_count(self, ctx):
+        """Reset the daily AI usage count (admin only)"""
+        # Check if the user has admin permissions
+        if not ctx.author.guild_permissions.administrator:
+            await ctx.send("Only administrators can reset the daily count.")
+            return
+            
+        # Reset the count
+        self.ai_daily_usage = {}
+        self.ai_last_reset = datetime.now()
+        
+        await ctx.send("✅ Daily AI usage count has been reset.")
+    
+    @commands.command()
+    async def ai_stats(self, ctx):
+        """Show AI usage statistics (admin only)"""
+        # Check if the user has admin permissions
+        if not ctx.author.guild_permissions.administrator:
+            await ctx.send("Only administrators can view AI statistics.")
+            return
+            
+        # Create an embed with the stats
+        embed = discord.Embed(
+            title="AI Usage Statistics",
+            color=0x00FF00
+        )
+        
+        # Check if we need to reset the daily count
+        self.check_ai_reset_daily_count()
+        
+        # Count total usage today
+        total_usage = sum(self.ai_daily_usage.values())
+        
+        # Add daily usage count
+        embed.add_field(
+            name="Total Usage Today",
+            value=f"{total_usage} requests",
+            inline=True
+        )
+        
+        # Add user count
+        embed.add_field(
+            name="Users Today",
+            value=f"{len(self.ai_daily_usage)} users",
+            inline=True
+        )
+        
+        # Add reset time
+        next_reset = datetime.combine(self.ai_last_reset.date() + timedelta(days=1), datetime.min.time())
+        time_until_reset = next_reset - datetime.now()
+        hours, remainder = divmod(time_until_reset.seconds, 3600)
+        minutes, _ = divmod(remainder, 60)
+        
+        embed.add_field(
+            name="Resets In",
+            value=f"{hours} hours, {minutes} minutes",
+            inline=True
+        )
+        
+        # Add active users on cooldown
+        now = time.time()
+        active_cooldowns = sum(1 for last_use in self.ai_user_cooldowns.values() 
+                             if now - last_use < self.ai_cooldown_time)
+        
+        embed.add_field(
+            name="Users on Cooldown",
+            value=f"{active_cooldowns} users",
+            inline=True
+        )
+        
+        # Add API status
+        api_status = "✅ Configured" if self.deepseek_api_key else "❌ Not Configured"
+        embed.add_field(
+            name="DeepSeek API Status",
+            value=api_status,
+            inline=True
+        )
+        
+        # Add top users
+        if self.ai_daily_usage:
+            top_users = sorted(self.ai_daily_usage.items(), key=lambda x: x[1], reverse=True)[:5]
+            top_users_text = ""
+            
+            for user_id, count in top_users:
+                try:
+                    user = await self.client.fetch_user(user_id)
+                    username = user.display_name
+                except:
+                    username = f"User {user_id}"
+                
+                top_users_text += f"{username}: **{count}/{self.ai_daily_limit}** requests\n"
+                
+            embed.add_field(
+                name="Top Users Today",
+                value=top_users_text or "No usage today",
+                inline=False
+            )
+        
+        await ctx.send(embed=embed)
+    
+    @commands.command()
+    async def ai(self, ctx, *, prompt: str = None):
+        """Generate a response using DeepSeek AI"""
+        # Check if there's no prompt but there are attachments
+        if not prompt and not ctx.message.attachments:
+            embed = discord.Embed(
+                title="AI Command Help",
+                description="Generate text using DeepSeek AI.",
+                color=0x3498db
+            )
+            embed.add_field(
+                name="Usage",
+                value="`-ai [prompt]` or attach an image with `-ai [prompt]`",
+                inline=False
+            )
+            embed.add_field(
+                name="Examples",
+                value="`-ai Tell me a joke about programming`\n"
+                      "`-ai Write a short poem about nature`\n"
+                      "`-ai What is the capital of France?`\n"
+                      "`-ai [attach image] What's in this image?`",
+                inline=False
+            )
+            embed.add_field(
+                name="Rate Limits",
+                value="Regular users can use this command once every 30 seconds with a limit of 30 requests per day.\n"
+                      "Administrators are not subject to these limitations.",
+                inline=False
+            )
+            await ctx.send(embed=embed)
+            return
+        
+        # Set default prompt if only an image is attached
+        if not prompt and ctx.message.attachments:
+            prompt = "Describe what you see in this image in detail."
+        
+        # Check if the API key is configured
+        if not self.deepseek_api_key:
+            await ctx.send("❌ DeepSeek API is not configured. Please ask an administrator to set it up.")
+            return
+            
+        # Check if the user is an admin (bypass cooldown and limits)
+        is_admin = ctx.author.guild_permissions.administrator
+        
+        # Check for cooldown if not an admin
+        if not is_admin:
+            on_cooldown, time_remaining = self.check_ai_cooldown(ctx.author.id)
+            if on_cooldown:
+                seconds = time_remaining
+                time_str = f"{seconds} seconds"
+                
+                embed = discord.Embed(
+                    title="Cooldown Active",
+                    description=f"You need to wait {time_str} before using this command again.",
+                    color=0xFF9900
+                )
+                embed.add_field(
+                    name="Why?",
+                    value="This cooldown helps prevent API rate limits.\n"
+                          "Server administrators are not subject to this cooldown.",
+                    inline=False
+                )
+                await ctx.send(embed=embed)
+                return
+            
+            # Check daily limit if not an admin
+            if self.check_ai_user_limit(ctx.author.id):
+                embed = discord.Embed(
+                    title="Daily Limit Reached",
+                    description=f"You've reached your limit of {self.ai_daily_limit} AI requests for today.",
+                    color=0xFF0000
+                )
+                embed.add_field(
+                    name="When does it reset?",
+                    value="The limit resets at midnight UTC.",
+                    inline=False
+                )
+                embed.set_footer(text="Server administrators are not subject to this limit.")
+                await ctx.send(embed=embed)
+                return
+        
+        # Send a loading message
+        loading_msg = await ctx.send("🧠 Thinking...")
+        
+        try:
+            # Check if there are attachments
+            has_image = False
+            image_content = None
+            
+            if ctx.message.attachments:
+                for attachment in ctx.message.attachments:
+                    # Check if the attachment is an image
+                    if any(attachment.filename.lower().endswith(ext) for ext in ['.png', '.jpg', '.jpeg', '.gif', '.webp']):
+                        # Check file size - DeepSeek API typically has limits (e.g., 10MB)
+                        max_size_mb = 10
+                        if attachment.size > max_size_mb * 1024 * 1024:
+                            await loading_msg.edit(content=f"❌ Image is too large (max {max_size_mb}MB). Please upload a smaller image.")
+                            return
+                            
+                        # Download the image
+                        image_bytes = await attachment.read()
+                        
+                        # Convert to base64
+                        image_b64 = base64.b64encode(image_bytes).decode('utf-8')
+                        
+                        # Create image content for the API - use the correct format for DeepSeek API
+                        # Format as per DeepSeek API requirements
+                        file_ext = attachment.filename.split('.')[-1].lower()
+                        mime_type = {
+                            'png': 'image/png',
+                            'jpg': 'image/jpeg',
+                            'jpeg': 'image/jpeg',
+                            'gif': 'image/gif',
+                            'webp': 'image/webp'
+                        }.get(file_ext, 'image/jpeg')
+                        
+                        image_content = f"data:{mime_type};base64,{image_b64}"
+                        has_image = True
+                        break  # Only use the first image
+            
+            # Make request to DeepSeek API
+            headers = {
+                "Authorization": f"Bearer {self.deepseek_api_key}",
+                "Content-Type": "application/json"
+            }
+            
+            # Prepare messages based on whether there's an image
+            messages = [
+                {"role": "system", "content": "You are a helpful assistant. Provide short, concise answers limited to about 750 tokens. Be direct and get straight to the point while still being helpful."}
+            ]
+            
+            if has_image:
+                # Use DeepSeek Chat model for image understanding (DeepSeek API doesn't have a separate vision model)
+                model = "deepseek-chat"
+                
+                # Add the image message
+                # For DeepSeek Chat API, we need to use a simpler format without image_url
+                messages.append({
+                    "role": "user",
+                    "content": prompt + "\n[IMAGE]"  # Indicate there's an image in the prompt
+                })
+            else:
+                # Use regular DeepSeek Chat model for text-only
+                model = "deepseek-chat"
+                messages.append({"role": "user", "content": prompt})
+            
+            # For image requests, we need to use a different approach
+            if has_image:
+                # Save the image to a temporary file
+                temp_image_path = f"temp_image_{ctx.author.id}.{file_ext}"
+                with open(temp_image_path, "wb") as f:
+                    f.write(image_bytes)
+                
+                # Create multipart form data
+                data = {
+                    "model": model,
+                    "messages": json.dumps(messages),
+                    "temperature": 0.7,
+                    "max_tokens": 750
+                }
+                
+                files = {
+                    "image": (f"image.{file_ext}", open(temp_image_path, "rb"), mime_type)
+                }
+                
+                # Debug info
+                print(f"Using model: {model} with image")
+                print(f"Request data: {json.dumps(data, indent=2)[:500]}...")  # Print first 500 chars
+                
+                try:
+                    response = requests.post(
+                        "https://api.deepseek.com/v1/chat/completions",
+                        headers=headers,
+                        data=data,
+                        files=files,
+                        timeout=60  # Increased timeout for image processing
+                    )
+                    
+                    # Clean up the temporary file
+                    try:
+                        os.remove(temp_image_path)
+                    except:
+                        pass
+                except Exception as e:
+                    await loading_msg.edit(content=f"❌ Error with image upload: {str(e)}")
+                    # Clean up the temporary file
+                    try:
+                        os.remove(temp_image_path)
+                    except:
+                        pass
+                    return
+            else:
+                # Regular text request
+                data = {
+                    "model": model,
+                    "messages": messages,
+                    "temperature": 0.7,
+                    "max_tokens": 750
+                }
+                
+                # Debug info
+                print(f"Using model: {model}")
+                print(f"Request data: {json.dumps(data, indent=2)[:500]}...")  # Print first 500 chars
+                
+                response = requests.post(
+                    "https://api.deepseek.com/v1/chat/completions",
+                    headers=headers,
+                    json=data,
+                    timeout=60  # Increased timeout for image processing
+                )
+            
+            # Check if the request was successful
+            if response.status_code != 200:
+                error_message = f"API Error: {response.status_code}"
+                try:
+                    error_data = response.json()
+                    print(f"API Error Response: {json.dumps(error_data, indent=2)}")
+                    if "error" in error_data:
+                        error_message = f"API Error: {error_data['error']['message']}"
+                except Exception as e:
+                    print(f"Error parsing API error response: {str(e)}")
+                    try:
+                        error_text = response.text
+                        print(f"Raw API Error Response: {error_text[:500]}")  # Print first 500 chars
+                        error_message = f"API Error {response.status_code}: {error_text[:100]}..."
+                    except:
+                        pass
+                
+                # For 422 errors (validation errors), provide more helpful information
+                if response.status_code == 422:
+                    error_message += "\n\nPossible causes:\n- Image format not supported (try JPG or PNG)\n- Image too large (try a smaller image)\n- Invalid model name"
+                
+                await loading_msg.edit(content=f"❌ {error_message}")
+                return
+            
+            # Parse the response
+            result = response.json()
+            ai_response = result["choices"][0]["message"]["content"]
+            
+            # Create embed for the response
+            embed = discord.Embed(
+                title="DeepSeek AI Response",
+                description=ai_response,
+                color=0x00AAFF
+            )
+            
+            # Add footer with prompt
+            truncated_prompt = prompt[:100] + "..." if len(prompt) > 100 else prompt
+            embed.set_footer(text=f"Prompt: {truncated_prompt}")
+            
+            # If there was an image, add it to the embed
+            if has_image and ctx.message.attachments:
+                embed.set_thumbnail(url=ctx.message.attachments[0].url)
+            
+            # Edit the loading message with the embed
+            await loading_msg.edit(content=None, embed=embed)
+            
+        except Exception as e:
+            await loading_msg.edit(content=f"❌ Error: {str(e)}")
+            print(f"AI command error: {traceback.format_exc()}")
     
     @commands.Cog.listener()
     async def on_reaction_remove(self, reaction, user):
@@ -2634,6 +3081,7 @@ class OtherCog(commands.Cog):
             description=f"Type the following {challenge['word_count']} words as fast and accurately as possible.",
             color=0xFF9900
         )
+        
         
         embed.add_field(
             name="Instructions",
