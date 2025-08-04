@@ -19,6 +19,7 @@ from lastfm import LastFMCog
 from birthday import BirthdayCog
 from timezone import TimezoneCog
 from snipe import SnipeCog
+from blockedterms import BlockedTermsCog
 # Import your new cog here
 # from mycog import MyCog
 
@@ -177,6 +178,7 @@ async def setup_hook():
         await client.add_cog(BirthdayCog(client))
         await client.add_cog(TimezoneCog(client))
         await client.add_cog(SnipeCog(client))
+        await client.add_cog(BlockedTermsCog(client))
         # Add your new cog here
         # await client.add_cog(MyCog(client))
         print("All cogs loaded successfully")

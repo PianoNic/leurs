@@ -65,7 +65,7 @@ class SnipeCog(commands.Cog, name="snipe"):
         # Store the deleted message
         self.deleted_messages[message.channel.id].append(deleted_msg)
 
-    @commands.command(name='s')
+    @commands.command(name='snipe')
     async def snipe(self, ctx):
         """Shows the last deleted message in the channel"""
         channel_id = ctx.channel.id
@@ -135,7 +135,7 @@ class SnipeCog(commands.Cog, name="snipe"):
             except:
                 continue
 
-    @commands.command(name='cs')
+    @commands.command(name='clearsnipe')
     async def clear_snipe(self, ctx):
         """Clears all stored deleted messages in this channel"""
         channel_id = ctx.channel.id
