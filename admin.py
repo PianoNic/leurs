@@ -78,7 +78,6 @@ class AdminCog(commands.Cog):
 
     # Load user actions from file
     def load_user_actions(self):
-        """Load user actions from JSON file"""
         try:
             if os.path.exists(self.user_actions_file):
                 with open(self.user_actions_file, 'r') as f:
@@ -94,7 +93,6 @@ class AdminCog(commands.Cog):
             
     # Save user actions to file
     def save_user_actions(self):
-        """Save user actions to JSON file"""
         try:
             with open(self.user_actions_file, 'w') as f:
                 json.dump(self.user_actions, f, indent=2)
@@ -105,7 +103,6 @@ class AdminCog(commands.Cog):
             
     # Add action to user history
     async def add_user_action(self, guild_id, user_id, action_type, reason=None, duration=None):
-        """Add an admin action to the user's history"""
         try:
             # Load current actions
             if not self.user_actions:
@@ -144,7 +141,6 @@ class AdminCog(commands.Cog):
 
     # Load warnings from file
     def load_warnings(self):
-        """Load warnings from JSON file"""
         try:
             if os.path.exists(self.warnings_file):
                 with open(self.warnings_file, 'r') as f:
@@ -160,7 +156,6 @@ class AdminCog(commands.Cog):
             
     # Save warnings to file
     def save_warnings(self):
-        """Save warnings to JSON file"""
         try:
             with open(self.warnings_file, 'w') as f:
                 json.dump(self.warnings, f, indent=2)
@@ -171,7 +166,6 @@ class AdminCog(commands.Cog):
             
     # Add warning to history
     async def add_warning(self, guild_id, user_id, reason):
-        """Add a warning to the history"""
         try:
             # Load current warnings
             if not self.warnings:
@@ -203,11 +197,6 @@ class AdminCog(commands.Cog):
     @commands.command()
     @has_permissions(administrator=True)
     async def warn(self, ctx, member: discord.Member, *, reason=None):
-        """Warn a user and send them a DM (Admin only)
-        
-        Usage:
-        !warn @user [reason] - Warns the user and sends them a DM with the reason
-        """
         if reason is None:
             reason = "No reason provided"
             
@@ -253,12 +242,7 @@ class AdminCog(commands.Cog):
     @commands.command(aliases=["o"])
     @has_permissions(administrator=True)
     async def overview(self, ctx, member: discord.Member):
-        """Show an overview of admin actions taken against a user
-        
-        Usage:
-        !overview @user - Shows all warnings, bans, kicks, mutes, jails, etc. for the user
-        !o @user - Alias for overview command
-        """
+
         try:
             guild_id_str = str(ctx.guild.id)
             user_id_str = str(member.id)
@@ -379,7 +363,6 @@ class AdminCog(commands.Cog):
 
     # Load nickname history from file
     def load_nickname_history(self):
-        """Load nickname history from JSON file"""
         try:
             if os.path.exists(self.nickname_file):
                 with open(self.nickname_file, 'r') as f:
@@ -395,7 +378,6 @@ class AdminCog(commands.Cog):
             
     # Save nickname history to file
     def save_nickname_history(self, history):
-        """Save nickname history to JSON file"""
         try:
             with open(self.nickname_file, 'w') as f:
                 json.dump(history, f, indent=2)
@@ -406,7 +388,6 @@ class AdminCog(commands.Cog):
             
     # Add nickname change to history
     async def add_nickname_change(self, guild_id, user_id, old_nick, new_nick):
-        """Add a nickname change to the history"""
         try:
             # Load current history
             history = self.load_nickname_history()
@@ -437,7 +418,6 @@ class AdminCog(commands.Cog):
 
     # Get previous nickname from history
     async def get_previous_nickname(self, guild_id, user_id):
-        """Get the previous nickname for a user"""
         try:
             # Load current history
             history = self.load_nickname_history()
@@ -463,12 +443,6 @@ class AdminCog(commands.Cog):
     @commands.command()
     @has_permissions(administrator=True)
     async def nick(self, ctx, member: discord.Member = None, *, new_nickname = None):
-        """Change a user's nickname (Admin only)
-        
-        Usage:
-        !nick @user New Nickname - Change another user's nickname
-        !nick New Nickname - Change your own nickname
-        """
         # If no member is specified, use the command author
         if member is None and new_nickname is None:
             raise commands.CommandError("Please provide a nickname.")
@@ -503,12 +477,6 @@ class AdminCog(commands.Cog):
     @commands.command()
     @has_permissions(administrator=True)
     async def nickremove(self, ctx, member: discord.Member = None):
-        """Remove a user's nickname (Admin only)
-        
-        Usage:
-        !nickremove @user - Remove another user's nickname
-        !nickremove - Remove your own nickname
-        """
         # If no member is specified, use the command author
         if member is None:
             member = ctx.author
@@ -538,12 +506,6 @@ class AdminCog(commands.Cog):
     @commands.command()
     @has_permissions(administrator=True)
     async def nickrevert(self, ctx, member: discord.Member = None):
-        """Revert a user's nickname to their previous one (Admin only)
-        
-        Usage:
-        !nickrevert @user - Revert another user's nickname
-        !nickrevert - Revert your own nickname
-        """
         # If no member is specified, use the command author
         if member is None:
             member = ctx.author
@@ -608,11 +570,6 @@ class AdminCog(commands.Cog):
         
     @commands.command()
     async def nickme(self, ctx, *, new_nickname=None):
-        """Change your own nickname
-        
-        Usage:
-        !nickme New Nickname - Change your own nickname
-        """
         if new_nickname is None:
             raise commands.CommandError("Please provide a new nickname.")
             
@@ -640,11 +597,6 @@ class AdminCog(commands.Cog):
             
     @commands.command()
     async def nickmeremove(self, ctx):
-        """Remove your own nickname
-        
-        Usage:
-        !nickmeremove - Remove your own nickname
-        """
         try:
             # Store the old nickname before removing
             old_nickname = ctx.author.nick or ctx.author.name
@@ -669,11 +621,6 @@ class AdminCog(commands.Cog):
             
     @commands.command()
     async def nickmerevert(self, ctx):
-        """Revert your nickname to your previous one
-        
-        Usage:
-        !nickmerevert - Revert your own nickname
-        """
         try:
             # Get the previous nickname
             previous_nickname = await self.get_previous_nickname(ctx.guild.id, ctx.author.id)
@@ -717,7 +664,6 @@ class AdminCog(commands.Cog):
         return False
         
     async def role_save_loop(self):
-        """Loop that saves roles every 6 hours"""
         await self.client.wait_until_ready()
         while not self.client.is_closed():
             try:
@@ -740,7 +686,6 @@ class AdminCog(commands.Cog):
                 await asyncio.sleep(300)  # 5 minutes
 
     async def save_roles(self, guild):
-        """Save roles for all members in a guild"""
         try:
             # Load existing saved roles if any
             saved_roles = {}
@@ -772,7 +717,6 @@ class AdminCog(commands.Cog):
             return False
 
     def load_role_save_info(self):
-        """Load role save timing information"""
         try:
             if os.path.exists(self.roles_info_file):
                 with open(self.roles_info_file, 'r') as f:
@@ -789,7 +733,6 @@ class AdminCog(commands.Cog):
             self.next_save_time = datetime.utcnow() + timedelta(hours=6)
 
     def save_role_save_info(self):
-        """Save role save timing information"""
         try:
             info = {
                 'last_save': self.last_save_time.isoformat() if self.last_save_time else None,
@@ -803,7 +746,6 @@ class AdminCog(commands.Cog):
 
     @commands.Cog.listener()
     async def on_member_join(self, member):
-        """Restore roles when a member rejoins the server"""
         # Skip bots
         if member.bot:
             return
@@ -852,12 +794,6 @@ class AdminCog(commands.Cog):
     @commands.command()
     @has_permissions(administrator=True)
     async def saveroles(self, ctx, option: str = None):
-        """Save roles for all members or show save info
-        
-        Usage:
-        !saveroles - Save roles now
-        !saveroles info - Show last and next save times
-        """
         if option and option.lower() == "info":
             # Show save info
             if not self.last_save_time:
@@ -948,7 +884,6 @@ class AdminCog(commands.Cog):
     @commands.command()
     @has_permissions(administrator=True)
     async def ban(self, ctx, member: discord.Member, *, reason=None):
-        """Ban a member from the server"""
         await member.ban(reason=reason)
         
         # Add to user actions
@@ -964,7 +899,6 @@ class AdminCog(commands.Cog):
     @commands.command()
     @has_permissions(administrator=True)
     async def kick(self, ctx, member: discord.Member, *, reason=None):
-        """Kick a member from the server"""
         await member.kick(reason=reason)
         
         # Add to user actions
@@ -980,7 +914,6 @@ class AdminCog(commands.Cog):
     @commands.command()
     @has_permissions(administrator=True)
     async def mute(self, ctx, member: discord.Member, duration: str = "10m", *, reason=None):
-        """Mute a member for a specified duration (e.g., '60s' for seconds, '10m' for minutes)"""
         muted_role = await self.get_or_create_muted_role(ctx)
         if muted_role in member.roles:
             raise commands.CommandError(f"{member.mention} is already muted.")
@@ -991,7 +924,6 @@ class AdminCog(commands.Cog):
         await self.apply_mute(ctx, member, muted_role, duration, reason)
 
     async def get_or_create_muted_role(self, ctx):
-        """Retrieve or create the 'Muted' role."""
         muted_role = discord.utils.get(ctx.guild.roles, name="Muted")
         if not muted_role:
             muted_role = await ctx.guild.create_role(name="Muted")
@@ -1000,7 +932,6 @@ class AdminCog(commands.Cog):
         return muted_role
 
     async def apply_mute(self, ctx, member, muted_role, duration, reason):
-        """Apply the mute to the member."""
         await member.add_roles(muted_role)
         embed = discord.Embed(
             title="Mute",
@@ -1012,7 +943,6 @@ class AdminCog(commands.Cog):
         asyncio.create_task(self.schedule_unmute(ctx, member, muted_role, duration))
 
     async def schedule_unmute(self, ctx, member, muted_role, duration):
-        """Schedule the unmute after the specified duration."""
         if duration.endswith('s'):
             duration_seconds = int(duration[:-1])
         elif duration.endswith('m'):
@@ -1046,7 +976,6 @@ class AdminCog(commands.Cog):
     @commands.command()
     @has_permissions(administrator=True)
     async def unmute(self, ctx, member: discord.Member):
-        """Unmute a member"""
         muted_role = discord.utils.get(ctx.guild.roles, name="Muted")
         if muted_role and muted_role in member.roles:
             await member.remove_roles(muted_role)
@@ -1062,7 +991,6 @@ class AdminCog(commands.Cog):
     @commands.command()
     @has_permissions(administrator=True)
     async def addbalance(self, ctx, member: discord.Member, amount: int):
-        """Add balance to a user's account"""
         economy_cog = self.client.get_cog("EconomyCog")
         if economy_cog:
             await economy_cog.add_balance(member.id, amount)
@@ -1078,7 +1006,6 @@ class AdminCog(commands.Cog):
     @commands.command()
     @has_permissions(administrator=True)
     async def removebalance(self, ctx, member: discord.Member, amount: int):
-        """Remove balance from a user's account"""
         economy_cog = self.client.get_cog("EconomyCog")
         if economy_cog:
             await economy_cog.remove_balance(member.id, amount)
@@ -1094,7 +1021,6 @@ class AdminCog(commands.Cog):
     @commands.command()
     @has_permissions(administrator=True)
     async def grant(self, ctx, member: discord.Member, time: str = None):
-        """Grant a special role to a user for a specified duration (e.g., '30s', '5m', '2h', '7d') or permanently if no time specified"""
         try:
             role = ctx.guild.get_role(1225863450308378644)
             if not role:
@@ -1156,7 +1082,6 @@ class AdminCog(commands.Cog):
     @commands.command()
     @has_permissions(administrator=True)
     async def ungrant(self, ctx, member: discord.Member, time: str = None):
-        """Temporarily remove the special role from a user for specified duration (e.g., '30s', '5m', '2h', '7d') or permanently if no time specified"""
         try:
             role = ctx.guild.get_role(1225863450308378644)
             if not role:
@@ -1225,7 +1150,6 @@ class AdminCog(commands.Cog):
     @commands.command()
     @has_permissions(administrator=True)
     async def clear(self, ctx, amount: int):
-        """Clear a specified number of messages from the channel"""
         try:
             # Add 1 to include the command message itself
             amount = amount + 1
@@ -1258,7 +1182,6 @@ class AdminCog(commands.Cog):
     @commands.command()
     @has_permissions(administrator=True)
     async def jail(self, ctx, member: discord.Member, time: str = None, *, reason=None):
-        """Jail a user for a specified duration (e.g., '30s', '5m', '2h', '7d') or permanently if no time specified"""
         try:
             role = ctx.guild.get_role(1211618366763044874)
             if not role:
@@ -1325,13 +1248,6 @@ class AdminCog(commands.Cog):
     @commands.command()
     @has_permissions(administrator=True)
     async def reaction(self, ctx, term: str = None, emoji: str = None):
-        """Set up an auto reaction for a specific term
-        
-        Usage:
-        !reaction [term] [emoji] - Add a new auto reaction
-        !reaction list - List all auto reactions
-        !reaction remove [term] - Remove an auto reaction
-        """
         if term is None:
             await ctx.send("Usage: `!reaction [term] [emoji]` or `!reaction list` or `!reaction remove [term]`")
             return
@@ -1411,11 +1327,6 @@ class AdminCog(commands.Cog):
     @commands.command()
     @has_permissions(administrator=True)
     async def reactionremove(self, ctx, *, term: str = None):
-        """Remove an auto reaction for a specific term
-        
-        Usage:
-        !reactionremove [term] - Remove the auto reaction for the specified term
-        """
         if term is None:
             await ctx.send("Please specify a term to remove: `!reactionremove [term]`")
             return
@@ -1439,7 +1350,6 @@ class AdminCog(commands.Cog):
     @commands.command()
     @has_permissions(administrator=True)
     async def unjail(self, ctx, member: discord.Member, time: str = None):
-        """Temporarily release a user from jail for specified duration (e.g., '30s', '5m', '2h', '7d') or permanently if no time specified"""
         try:
             role = ctx.guild.get_role(1211618366763044874)
             if not role:
@@ -1508,14 +1418,6 @@ class AdminCog(commands.Cog):
     @commands.command()
     @has_permissions(administrator=True)
     async def cclear(self, ctx, *args):
-        """Clear messages containing specific text. Usage:
-        cclear [text] - Search in all channels
-        cclear -current [text] - Search only in current channel
-        cclear [@user] [text] - Search messages from specific user
-        cclear -scan - Scan and cache all messages
-        cclear -p [percentage] [text] - Delete only specified percentage of matches
-        cclear yes/no - Confirm or cancel pending deletion"""
-        
         if not args:
             raise commands.CommandError("Please provide search text or yes/no for confirmation.")
 
@@ -1601,7 +1503,6 @@ class AdminCog(commands.Cog):
         await ctx.send(embed=embed)
 
     async def scan_all_messages(self, ctx):
-        """Scan and cache all messages in the server"""
         status_msg = await ctx.send(embed=discord.Embed(
             title="Scanning Messages",
             description="Starting scan... This might take a while.",
@@ -1693,7 +1594,6 @@ class AdminCog(commands.Cog):
             await ctx.send(f"Error saving cache: {str(e)}")
 
     def load_cache(self):
-        """Load cache files into memory"""
         try:
             # Load messages
             with open(self.message_cache_file, 'r', encoding='utf-8') as f:
@@ -1708,7 +1608,6 @@ class AdminCog(commands.Cog):
             raise commands.CommandError("Error reading cache files. Please run `cclear -scan` again.")
 
     async def search_cached_messages(self, ctx, search_text, current_channel_only, target_user):
-        """Search through cached messages using the word index"""
         status_msg = await ctx.send(embed=discord.Embed(
             title="Searching Messages",
             description="Reading cache files...",
@@ -1765,7 +1664,6 @@ class AdminCog(commands.Cog):
         return messages_to_delete
 
     async def handle_cclear_confirmation(self, ctx, response):
-        """Handle the confirmation response for cclear command"""
         if ctx.author.id not in self.pending_cclear:
             raise commands.CommandError("No pending clear operation. Please start a new search.")
 
@@ -1877,7 +1775,6 @@ class AdminCog(commands.Cog):
         await ctx.send(embed=embed)
 
     def load_auto_reactions(self):
-        """Load auto reactions from JSON file"""
         try:
             if os.path.exists(self.reactions_file):
                 with open(self.reactions_file, 'r') as f:
@@ -1892,7 +1789,6 @@ class AdminCog(commands.Cog):
             return {}
 
     def save_auto_reactions(self):
-        """Save auto reactions to JSON file"""
         try:
             with open(self.reactions_file, 'w') as f:
                 json.dump(self.auto_reactions, f, indent=2)
@@ -1902,7 +1798,6 @@ class AdminCog(commands.Cog):
             return False
             
     def is_cache_recent(self):
-        """Check if cache exists and is less than 24 hours old"""
         try:
             if not os.path.exists(self.last_scan_file) or not os.path.exists(self.message_cache_file):
                 return False
@@ -1937,16 +1832,6 @@ class AdminCog(commands.Cog):
     @commands.command()
     @has_permissions(administrator=True)
     async def embed(self, ctx, color: str = None, *, text: str = None):
-        """Create an embed with custom color and text (Admin only)
-        
-        Usage:
-        !embed [color] [text] - Create an embed with specified color and text
-        !embed [color] - When replying to a message, embeds that message's content
-        
-        Color can be a common color name (red, blue, green, etc.) or a hex code
-        Text can include markdown formatting
-        If color is omitted, the embed will be gray
-        """
         # Delete the command message
         try:
             await ctx.message.delete()
@@ -2025,7 +1910,6 @@ class AdminCog(commands.Cog):
         await ctx.send(embed=embed)
         
     def parse_color(self, color):
-        """Parse color string into discord.Color"""
         # Default color
         embed_color = discord.Color.light_grey()
         
@@ -2150,7 +2034,6 @@ class AdminCog(commands.Cog):
         return False
 
     def load_reaction_roles(self):
-        """Load reaction roles from JSON file"""
         try:
             if os.path.exists(self.reaction_roles_file):
                 with open(self.reaction_roles_file, 'r') as f:
@@ -2165,7 +2048,6 @@ class AdminCog(commands.Cog):
             return {}
 
     def save_reaction_roles(self):
-        """Save reaction roles to JSON file"""
         try:
             with open(self.reaction_roles_file, 'w') as f:
                 json.dump(self.reaction_roles, f, indent=2)
@@ -2177,13 +2059,6 @@ class AdminCog(commands.Cog):
     @commands.command()
     @has_permissions(administrator=True)
     async def reactrole(self, ctx, role_id: int, emoji: str, *, message: str):
-        """Create a reaction role message
-        
-        Usage:
-        !reactrole [role_id] [emoji] [message] - Creates an embed with the message and sets up a reaction role
-        
-        When users react with the specified emoji, they will receive the role.
-        """
         try:
             # Check if the role exists
             role = ctx.guild.get_role(role_id)
@@ -2226,7 +2101,6 @@ class AdminCog(commands.Cog):
 
     @commands.Cog.listener()
     async def on_raw_reaction_add(self, payload):
-        """Handle reaction role assignments when a user adds a reaction"""
         # Ignore bot reactions
         if payload.member.bot:
             return
@@ -2252,7 +2126,6 @@ class AdminCog(commands.Cog):
 
     @commands.Cog.listener()
     async def on_raw_reaction_remove(self, payload):
-        """Handle reaction role removals when a user removes a reaction"""
         guild_id = str(payload.guild_id)
         message_id = str(payload.message_id)
         emoji = str(payload.emoji)

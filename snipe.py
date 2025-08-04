@@ -67,7 +67,6 @@ class SnipeCog(commands.Cog, name="snipe"):
 
     @commands.command(name='snipe')
     async def snipe(self, ctx):
-        """Shows the last deleted message in the channel"""
         channel_id = ctx.channel.id
         if channel_id not in self.deleted_messages or not self.deleted_messages[channel_id]:
             embed = discord.Embed(
@@ -137,7 +136,6 @@ class SnipeCog(commands.Cog, name="snipe"):
 
     @commands.command(name='clearsnipe')
     async def clear_snipe(self, ctx):
-        """Clears all stored deleted messages in this channel"""
         channel_id = ctx.channel.id
         if channel_id in self.deleted_messages:
             del self.deleted_messages[channel_id]

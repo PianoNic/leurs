@@ -20,28 +20,28 @@ import base64
 class OtherCog(commands.Cog):
     def __init__(self, client):
         self.client = client
-        self.afk_users = {}  # Store user_id: (reason, timestamp, command_timestamp)
-        self.reminder_tasks = {}  # Store user_id: list of asyncio tasks
+        self.afk_users = {}
+        self.reminder_tasks = {} 
         self.google_api_key = os.getenv("GOOGLE_API_KEY", "")
         self.google_cse_id = os.getenv("GOOGLE_CSE_ID", "")
-        self.image_search_cache = {}  # Store search results: query: [list of image URLs]
-        self.active_image_searches = {}  # Store active searches: message_id: (query, current_index)
-        self.max_cache_size = 50  # Maximum number of queries to cache
+        self.image_search_cache = {}  
+        self.active_image_searches = {} 
+        self.max_cache_size = 50 
         
         # Rate limiting for image search
-        self.daily_search_count = 0  # Count of searches today
-        self.last_count_reset = datetime.now()  # When the count was last reset
-        self.user_cooldowns = {}  # Store user_id: last_use_timestamp
-        self.cooldown_time = 300  # 5 minutes in seconds
-        self.daily_limit = 100  # Google's free tier limit
+        self.daily_search_count = 0
+        self.last_count_reset = datetime.now()
+        self.user_cooldowns = {}
+        self.cooldown_time = 300
+        self.daily_limit = 100
         
         # For AI command
         self.deepseek_api_key = os.getenv("DEEPSEEK_API_KEY", "")
-        self.ai_user_cooldowns = {}  # Store user_id: last_use_timestamp
-        self.ai_cooldown_time = 30  # 30 seconds cooldown
-        self.ai_daily_usage = {}  # Store user_id: count
-        self.ai_daily_limit = 30  # 30 requests per day
-        self.ai_last_reset = datetime.now()  # When the count was last reset
+        self.ai_user_cooldowns = {} 
+        self.ai_cooldown_time = 30
+        self.ai_daily_usage = {}
+        self.ai_daily_limit = 30
+        self.ai_last_reset = datetime.now()
         
         # For monkeytype command
         self.active_typing_tests = {}  # Store user_id: {"words": [], "start_time": datetime, "message_id": int}
@@ -190,66 +190,64 @@ class OtherCog(commands.Cog):
         self.font_path = self.get_font_path()
         print(f"Font path: {self.font_path}")
         
-        # Weather condition emoji mappings
         self.weather_codes = {
             # Clear
-            0: "☀️",  # Clear sky
+            0: "☀️", 
             
             # Partly cloudy
-            1: "🌤️",  # Mainly clear
-            2: "⛅",   # Partly cloudy
-            3: "☁️",   # Overcast
+            1: "🌤️",  
+            2: "⛅",  
+            3: "☁️",  
             
             # Fog
-            45: "🌫️",  # Fog
-            48: "🌫️",  # Depositing rime fog
+            45: "🌫️",
+            48: "🌫️",
             
             # Drizzle
-            51: "🌦️",  # Light drizzle
-            53: "🌦️",  # Moderate drizzle
-            55: "🌧️",  # Dense drizzle
+            51: "🌦️",
+            53: "🌦️",
+            55: "🌧️",
             
             # Freezing Drizzle
-            56: "🌨️",  # Light freezing drizzle
-            57: "🌨️",  # Dense freezing drizzle
+            56: "🌨️",
+            57: "🌨️",
             
             # Rain
-            61: "🌦️",  # Slight rain
-            63: "🌧️",  # Moderate rain
-            65: "🌧️",  # Heavy rain
+            61: "🌦️",
+            63: "🌧️",
+            65: "🌧️",
             
             # Freezing Rain
-            66: "🌨️",  # Light freezing rain
-            67: "🌨️",  # Heavy freezing rain
+            66: "🌨️",
+            67: "🌨️",
             
             # Snow
-            71: "🌨️",  # Slight snow fall
-            73: "❄️",   # Moderate snow fall
-            75: "❄️",   # Heavy snow fall
+            71: "🌨️",
+            73: "❄️",
+            75: "❄️",
             
             # Snow grains
             77: "❄️",   # Snow grains
             
             # Rain showers
-            80: "🌦️",  # Slight rain showers
-            81: "🌧️",  # Moderate rain showers
-            82: "🌧️",  # Violent rain showers
+            80: "🌦️",
+            81: "🌧️",
+            82: "🌧️",
             
             # Snow showers
-            85: "🌨️",  # Slight snow showers
-            86: "❄️",   # Heavy snow showers
+            85: "🌨️", 
+            86: "❄️",
             
             # Thunderstorm
-            95: "⛈️",   # Thunderstorm
-            96: "⛈️",   # Thunderstorm th slight hail
-            99: "⛈️",   # Thunderstorm with heavy hail
+            95: "⛈️",
+            96: "⛈️",
+            99: "⛈️",
             
             # Default
-            -1: "🌡️"   # Default/unknown
+            -1: "🌡️"
         }
     
     def parse_time(self, time_str: str, reason: str) -> Tuple[Optional[datetime], str]:
-        """Parse various time formats and return a datetime object and the cleaned reason"""
         now = datetime.now()
         
         # Handle relative time formats (15m, 2h, 3d)
@@ -332,7 +330,6 @@ class OtherCog(commands.Cog):
         return None, reason
         
     async def send_reminder(self, ctx, user_id: int, channel_id: int, remind_time: datetime, reason: str):
-        """Send a reminder to the user at the specified time"""
         try:
             await asyncio.sleep((remind_time - datetime.now()).total_seconds())
             channel = self.client.get_channel(channel_id)
@@ -352,7 +349,6 @@ class OtherCog(commands.Cog):
                 
     @commands.command(aliases=['rm'])
     async def remindme(self, ctx, time_str: str, *, reason: str = "No reason provided"):
-        """Set a reminder with various time formats"""
         remind_time, cleaned_reason = self.parse_time(time_str, reason)
         
         if not remind_time:
@@ -414,7 +410,6 @@ class OtherCog(commands.Cog):
     
     @commands.command()
     async def afk(self, ctx, *, reason="AFK"):
-        """Set your AFK status with an optional reason"""
         current_time = time.time()
         self.afk_users[ctx.author.id] = (reason, current_time, current_time)
         
@@ -558,7 +553,6 @@ class OtherCog(commands.Cog):
                 del self.active_typing_tests[message.author.id]
     
     def create_typing_result_embed(self, result, user):
-        """Create an embed for typing test results"""
         embed = discord.Embed(
             title="⌨️ Typing Test Results",
             color=0x00FF00 if result["accuracy"] > 90 else (0xFFFF00 if result["accuracy"] > 75 else 0xFF0000)
@@ -616,7 +610,6 @@ class OtherCog(commands.Cog):
         return embed
     
     async def compare_challenge_results(self, channel, challenge_id):
-        """Compare and display the results of a typing challenge"""
         challenge = self.typing_challenges[challenge_id]
         
         # Get the users
@@ -770,7 +763,6 @@ class OtherCog(commands.Cog):
     
     @commands.command(aliases=['list', 'reminders'])
     async def remindme_list(self, ctx):
-        """List all your active reminders"""
         if ctx.author.id not in self.reminder_tasks or not self.reminder_tasks[ctx.author.id]:
             embed = discord.Embed(
                 title="Your Reminders",
@@ -848,13 +840,9 @@ class OtherCog(commands.Cog):
         await ctx.send(embed=embed)
     
     def get_font_path(self):
-        """Get the font path, downloading it if necessary"""
-        # Check if we have a font in data/fonts
         font_path = 'data/fonts/arial.ttf'
         
-        # If the font doesn't exist, use a system font
         if not os.path.exists(font_path):
-            # Try to use a system font that's likely to exist
             system_fonts = [
                 '/usr/share/fonts/TTF/Arial.ttf',  # Linux
                 '/usr/share/fonts/truetype/msttcorefonts/Arial.ttf',  # Some Linux
@@ -878,24 +866,18 @@ class OtherCog(commands.Cog):
             except Exception as e:
                 print(f"Error downloading font: {e}")
             
-            # If all else fails, we'll use default font in PIL
             return None
     
     async def create_quote_image(self, avatar_url, message_content, username):
-        """Create a quote image with user's avatar and message content"""
         try:
             # Download the user's avatar
             response = requests.get(avatar_url)
             avatar_image = Image.open(io.BytesIO(response.content))
             
-            # Create a square image (1:1 aspect ratio)
-            size = 1000  # Standard size - we'll scale the image later
+            size = 1000
             
-            # Resize avatar to fill the entire background
-            # Calculate dimensions to maintain aspect ratio while filling the square
             width, height = avatar_image.size
             
-            # Determine which dimension to use for cropping
             if width > height:
                 # Image is wider than tall
                 new_width = int(width * size / height)
@@ -1061,12 +1043,9 @@ class OtherCog(commands.Cog):
     
     @commands.command()
     async def quote(self, ctx):
-        """Create a quote image from a replied message"""
         try:
-            # Send a temporary confirmation message
             temp_msg = await ctx.send("Generating quote image...")
             
-            # Check if the command is replying to a message
             if not ctx.message.reference:
                 await temp_msg.edit(content="You need to reply to a message to quote it!")
                 return
@@ -1103,7 +1082,6 @@ class OtherCog(commands.Cog):
     
     @commands.command(aliases=['av'])
     async def avatar(self, ctx, member: discord.Member = None):
-        """Display a user's global avatar in high quality"""
         # If no member is specified, use the command author
         member = member or ctx.author
         
@@ -1123,7 +1101,6 @@ class OtherCog(commands.Cog):
     
     @commands.command(aliases=['sav'])
     async def serveravatar(self, ctx, member: discord.Member = None):
-        """Display a user's server-specific avatar in high quality"""
         # If no member is specified, use the command author
         member = member or ctx.author
         
@@ -1148,7 +1125,6 @@ class OtherCog(commands.Cog):
     
     @commands.command()
     async def banner(self, ctx, user: discord.User = None):
-        """Display a user's banner in high quality"""
         # If no user is specified, use the command author
         user = user or ctx.author
         
@@ -1179,7 +1155,6 @@ class OtherCog(commands.Cog):
     
     @commands.command()
     async def sbanner(self, ctx, member: discord.Member = None):
-        """Display a user's server banner in high quality"""
         # If no member is specified, use the command author
         member = member or ctx.author
         
@@ -1207,7 +1182,6 @@ class OtherCog(commands.Cog):
     
     @commands.command(aliases=['fortune', 'cookie', 'fc'])
     async def fortunecookie(self, ctx):
-        """Get a random fortune cookie message"""
         try:
             # Send a temporary message while fetching the fortune
             temp_msg = await ctx.send("Breaking open a fortune cookie...")
@@ -1245,7 +1219,6 @@ class OtherCog(commands.Cog):
     
     @commands.command()
     async def set_weather_api_key(self, ctx, api_key: str):
-        """Set the OpenWeatherMap API key (admin only)"""
         # Check if the user has admin permissions
         if not ctx.author.guild_permissions.administrator:
             await ctx.send("Only administrators can set the API key.")
@@ -1263,11 +1236,9 @@ class OtherCog(commands.Cog):
         await ctx.send("Weather API key has been set successfully!", delete_after=5)
     
     def get_weather_emoji(self, weather_code: int) -> str:
-        """Get emoji for weather code"""
         return self.weather_codes.get(weather_code, self.weather_codes[-1])
     
     async def geocode_location(self, location: str) -> Optional[Tuple[float, float, str, str]]:
-        """Convert location name to coordinates using Open-Meteo Geocoding API"""
         try:
             # URL encode the location
             encoded_location = location.replace(" ", "+")
@@ -1299,24 +1270,18 @@ class OtherCog(commands.Cog):
             return None
     
     def get_daily_weather_summary(self, hourly_data: Dict) -> List[Dict]:
-        """Process hourly data to get daily summaries"""
         daily_summary = []
         
-        # Get the hourly timestamps and convert to datetime objects
         times = [datetime.fromisoformat(t.replace('Z', '+00:00')) for t in hourly_data["time"]]
         
-        # Group by day
         daily_data = {}
         
         for i, time in enumerate(times):
-            # Skip past hours of today
             if time.date() < datetime.now().date():
                 continue
                 
-            # Convert to local date
             date_str = time.date().isoformat()
             
-            # Initialize if this is the first entry for this date
             if date_str not in daily_data:
                 daily_data[date_str] = {
                     "temp_min": float('inf'),
@@ -1336,11 +1301,8 @@ class OtherCog(commands.Cog):
             if "weather_code" in hourly_data:
                 daily_data[date_str]["weather_codes"].append(hourly_data["weather_code"][i])
         
-        # Convert to list and sort by date
         for date_str, data in daily_data.items():
-            # Find most common weather code for the day
             if data["weather_codes"]:
-                # Count occurrences of each code
                 code_counts = {}
                 for code in data["weather_codes"]:
                     if code not in code_counts:
@@ -1366,16 +1328,13 @@ class OtherCog(commands.Cog):
     
     @commands.command()
     async def weather(self, ctx, *, location: str = None):
-        """Get current weather and 5-day forecast for a location"""
         if not location:
             await ctx.send("Please provide a location. Example: `-weather London`")
             return
             
-        # Send a temporary message while fetching weather data
         temp_msg = await ctx.send(f"Fetching weather data for {location}...")
         
         try:
-            # First, geocode the location to get coordinates
             geocode_result = await self.geocode_location(location)
             
             if not geocode_result:
@@ -1411,10 +1370,8 @@ class OtherCog(commands.Cog):
             weather_code = current["weather_code"]
             weather_emoji = self.get_weather_emoji(weather_code)
             
-            # Get daily forecast
             daily = weather_data["daily"]
             
-            # Create embed for weather data
             location_name = f"{city_name}, {country}" if country else city_name
             embed = discord.Embed(
                 title=f"Weather for {location_name}",
@@ -1429,7 +1386,6 @@ class OtherCog(commands.Cog):
                 inline=True
             )
             
-            # Today's min/max from daily data
             today_min = round(daily["temperature_2m_min"][0])
             today_max = round(daily["temperature_2m_max"][0])
             
@@ -1471,7 +1427,6 @@ class OtherCog(commands.Cog):
             # Add timestamp
             embed.set_footer(text=f"Last updated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
             
-            # Send the embed and delete the temporary message
             await ctx.send(embed=embed)
             await temp_msg.delete()
             
@@ -1480,18 +1435,14 @@ class OtherCog(commands.Cog):
             print(f"Weather error: {traceback.format_exc()}")
     
     def clean_image_cache(self):
-        """Clean up the image search cache if it gets too large"""
         if len(self.image_search_cache) > self.max_cache_size:
-            # Get the oldest items (we'll remove 20% of the cache)
             num_to_remove = max(1, int(self.max_cache_size * 0.2))
             keys_to_remove = list(self.image_search_cache.keys())[:num_to_remove]
             
-            # Remove the oldest items
             for key in keys_to_remove:
                 del self.image_search_cache[key]
     
     def check_reset_daily_count(self):
-        """Check if we need to reset the daily search count"""
         now = datetime.now()
         # Reset count if it's a new day
         if now.date() > self.last_count_reset.date():
@@ -1501,17 +1452,11 @@ class OtherCog(commands.Cog):
         return False
     
     def increment_search_count(self):
-        """Increment the daily search count and return True if limit exceeded"""
         self.check_reset_daily_count()
         self.daily_search_count += 1
         return self.daily_search_count > self.daily_limit
     
     def check_user_cooldown(self, user_id: int) -> Tuple[bool, int]:
-        """Check if a user is on cooldown
-        
-        Returns:
-            Tuple[bool, int]: (is_on_cooldown, seconds_remaining)
-        """
         now = time.time()
         
         if user_id in self.user_cooldowns:
@@ -1526,7 +1471,6 @@ class OtherCog(commands.Cog):
         return False, 0
     
     def check_ai_reset_daily_count(self):
-        """Check if we need to reset the daily AI usage count"""
         now = datetime.now()
         # Reset count if it's a new day
         if now.date() > self.ai_last_reset.date():
@@ -1536,11 +1480,6 @@ class OtherCog(commands.Cog):
         return False
     
     def check_ai_user_limit(self, user_id: int) -> bool:
-        """Check if a user has reached their daily AI usage limit
-        
-        Returns:
-            bool: True if limit exceeded, False otherwise
-        """
         self.check_ai_reset_daily_count()
         
         # Initialize if this is the first request of the day
@@ -1552,11 +1491,6 @@ class OtherCog(commands.Cog):
         return self.ai_daily_usage[user_id] > self.ai_daily_limit
     
     def check_ai_cooldown(self, user_id: int) -> Tuple[bool, int]:
-        """Check if a user is on AI cooldown
-        
-        Returns:
-            Tuple[bool, int]: (is_on_cooldown, seconds_remaining)
-        """
         now = time.time()
         
         if user_id in self.ai_user_cooldowns:
@@ -1572,13 +1506,11 @@ class OtherCog(commands.Cog):
     
     @commands.command()
     async def set_google_api_key(self, ctx, api_key: str):
-        """Set the Google API key (admin only)"""
         # Check if the user has admin permissions
         if not ctx.author.guild_permissions.administrator:
             await ctx.send("Only administrators can set the API key.")
             return
             
-        # Store the API key
         self.google_api_key = api_key
         
         # Delete the message to keep the API key private
@@ -1591,7 +1523,6 @@ class OtherCog(commands.Cog):
     
     @commands.command()
     async def set_google_cse_id(self, ctx, cse_id: str):
-        """Set the Google Custom Search Engine ID (admin only)"""
         # Check if the user has admin permissions
         if not ctx.author.guild_permissions.administrator:
             await ctx.send("Only administrators can set the CSE ID.")
@@ -1609,7 +1540,6 @@ class OtherCog(commands.Cog):
         await ctx.send("Google Custom Search Engine ID has been set successfully!", delete_after=5)
     
     async def search_images(self, query: str, num: int = 10) -> List[Dict]:
-        """Search for images using Google Custom Search API or fallback to free API"""
         # Special case for random images
         if query.lower() == "random":
             # Generate random categories for Unsplash
@@ -1723,7 +1653,6 @@ class OtherCog(commands.Cog):
     
     @commands.command(aliases=["image", "search"])
     async def img(self, ctx, *, query: str = None):
-        """Search for images and navigate through results with reactions"""
         # Check if query was provided
         if not query:
             embed = discord.Embed(
@@ -1924,7 +1853,6 @@ class OtherCog(commands.Cog):
     
     @commands.command()
     async def imgstats(self, ctx):
-        """Show image search usage statistics (admin only)"""
         # Check if the user has admin permissions
         if not ctx.author.guild_permissions.administrator:
             await ctx.send("Only administrators can view search statistics.")
@@ -1996,7 +1924,6 @@ class OtherCog(commands.Cog):
     
     @commands.command()
     async def img_reset_cooldowns(self, ctx):
-        """Reset all user cooldowns (admin only)"""
         # Check if the user has admin permissions
         if not ctx.author.guild_permissions.administrator:
             await ctx.send("Only administrators can reset cooldowns.")
@@ -2009,7 +1936,6 @@ class OtherCog(commands.Cog):
     
     @commands.command()
     async def img_reset_count(self, ctx):
-        """Reset the daily search count (admin only)"""
         # Check if the user has admin permissions
         if not ctx.author.guild_permissions.administrator:
             await ctx.send("Only administrators can reset the daily count.")
@@ -2023,7 +1949,6 @@ class OtherCog(commands.Cog):
     
     @commands.command()
     async def set_deepseek_api_key(self, ctx, api_key: str):
-        """Set the DeepSeek API key (admin only)"""
         # Check if the user has admin permissions
         if not ctx.author.guild_permissions.administrator:
             await ctx.send("Only administrators can set the API key.")
@@ -2042,7 +1967,6 @@ class OtherCog(commands.Cog):
     
     @commands.command()
     async def ai_reset_cooldowns(self, ctx):
-        """Reset all AI user cooldowns (admin only)"""
         # Check if the user has admin permissions
         if not ctx.author.guild_permissions.administrator:
             await ctx.send("Only administrators can reset cooldowns.")
@@ -2055,7 +1979,6 @@ class OtherCog(commands.Cog):
     
     @commands.command()
     async def ai_reset_count(self, ctx):
-        """Reset the daily AI usage count (admin only)"""
         # Check if the user has admin permissions
         if not ctx.author.guild_permissions.administrator:
             await ctx.send("Only administrators can reset the daily count.")
@@ -2069,25 +1992,19 @@ class OtherCog(commands.Cog):
     
     @commands.command()
     async def ai_stats(self, ctx):
-        """Show AI usage statistics (admin only)"""
-        # Check if the user has admin permissions
         if not ctx.author.guild_permissions.administrator:
             await ctx.send("Only administrators can view AI statistics.")
             return
             
-        # Create an embed with the stats
         embed = discord.Embed(
             title="AI Usage Statistics",
             color=0x00FF00
         )
         
-        # Check if we need to reset the daily count
         self.check_ai_reset_daily_count()
         
-        # Count total usage today
         total_usage = sum(self.ai_daily_usage.values())
         
-        # Add daily usage count
         embed.add_field(
             name="Total Usage Today",
             value=f"{total_usage} requests",
@@ -2156,7 +2073,6 @@ class OtherCog(commands.Cog):
     
     @commands.command()
     async def ai(self, ctx, *, prompt: str = None):
-        """Generate a response using DeepSeek AI"""
         # Check if there's no prompt but there are attachments
         if not prompt and not ctx.message.attachments:
             embed = discord.Embed(
@@ -2186,16 +2102,13 @@ class OtherCog(commands.Cog):
             await ctx.send(embed=embed)
             return
         
-        # Set default prompt if only an image is attached
         if not prompt and ctx.message.attachments:
             prompt = "Describe what you see in this image in detail."
         
-        # Check if the API key is configured
         if not self.deepseek_api_key:
             await ctx.send("❌ DeepSeek API is not configured. Please ask an administrator to set it up.")
             return
             
-        # Check if the user is an admin (bypass cooldown and limits)
         is_admin = ctx.author.guild_permissions.administrator
         
         # Check for cooldown if not an admin
@@ -2235,7 +2148,6 @@ class OtherCog(commands.Cog):
                 await ctx.send(embed=embed)
                 return
         
-        # Send a loading message
         loading_msg = await ctx.send("🧠 Thinking...")
         
         try:
@@ -2417,7 +2329,6 @@ class OtherCog(commands.Cog):
     
     @commands.Cog.listener()
     async def on_reaction_remove(self, reaction, user):
-        """Handle manual reaction removal for image navigation"""
         # Ignore bot reactions
         if user.bot:
             return
@@ -2440,7 +2351,6 @@ class OtherCog(commands.Cog):
             await reaction.message.edit(embed=new_embed)
     
     async def create_image_embed(self, image_info: Dict, query: str, index: int, total: int) -> discord.Embed:
-        """Create an embed for an image search result"""
         embed = discord.Embed(
             title=f"Image Search: {query}",
             description=image_info["title"],
@@ -2463,7 +2373,6 @@ class OtherCog(commands.Cog):
         return embed
     
     async def detect_language(self, text: str) -> str:
-        """Detect the language of a text using LibreTranslate API"""
         try:
             api_url = "https://libretranslate.de/detect"
             data = {"q": text}
@@ -2484,7 +2393,6 @@ class OtherCog(commands.Cog):
             return "en"  # Default to English on error
     
     async def translate_text(self, text: str, target_lang: str = "en", source_lang: str = None) -> Union[str, None]:
-        """Translate text using LibreTranslate API"""
         if not text:
             return None
             
@@ -2532,7 +2440,6 @@ class OtherCog(commands.Cog):
             return await self.translate_text_fallback(text, target_lang, source_lang)
     
     async def translate_text_fallback(self, text: str, target_lang: str = "en", source_lang: str = None) -> Union[str, None]:
-        """Fallback translation method using another free API"""
         try:
             # Try LingvaTranslate API as fallback
             api_url = f"https://lingva.ml/api/v1/{source_lang or 'auto'}/{target_lang}/{text}"
@@ -2576,7 +2483,6 @@ class OtherCog(commands.Cog):
     
     @commands.command(aliases=["t", "tr"])
     async def translate(self, ctx, target_lang: str = "en", *, text: str = None):
-        """Translate text to another language. Reply to a message or provide text."""
         # Check if it's a reply to a message
         if ctx.message.reference:
             try:
@@ -2756,8 +2662,6 @@ class OtherCog(commands.Cog):
     
     @commands.command(aliases=["langs", "language", "lang"])
     async def languages(self, ctx):
-        """Show available language codes for translation"""
-        # Create a paginated embed for language codes
         embeds = []
         
         # Sort languages by name
@@ -2838,7 +2742,6 @@ class OtherCog(commands.Cog):
     
     @commands.command(aliases=['mt', 'type'])
     async def monkeytype(self, ctx, word_count: int = 30):
-        """Start a typing test with the specified number of words"""
         # Validate word count
         if word_count < 10:
             await ctx.send("Please specify at least 10 words for the typing test.")
@@ -2894,7 +2797,6 @@ class OtherCog(commands.Cog):
     
     @commands.command(aliases=['mtc', 'challenge'])
     async def mtchallenge(self, ctx, user: discord.Member, word_count: int = 30):
-        """Challenge another user to a typing test"""
         # Check if the user is challenging themselves
         if user.id == ctx.author.id:
             await ctx.send("You can't challenge yourself!")
@@ -2965,7 +2867,6 @@ class OtherCog(commands.Cog):
         self.client.loop.create_task(self.delete_challenge_after_timeout(challenge_id, 600))  # 10 minutes
     
     async def delete_challenge_after_timeout(self, challenge_id, timeout):
-        """Delete a challenge after a timeout period"""
         await asyncio.sleep(timeout)
         
         # Check if the challenge still exists
@@ -3001,7 +2902,6 @@ class OtherCog(commands.Cog):
     
     @commands.command()
     async def accept(self, ctx, challenge_id: str = None):
-        """Accept a typing challenge"""
         # If no challenge_id is provided, check if the user has any pending challenges
         if not challenge_id:
             if ctx.author.id not in self.pending_challenges or not self.pending_challenges[ctx.author.id]:
@@ -3133,7 +3033,6 @@ class OtherCog(commands.Cog):
     
     @commands.Cog.listener()
     async def on_interaction(self, interaction):
-        """Handle button interactions"""
         if not interaction.data or "custom_id" not in interaction.data:
             return
             
@@ -3223,7 +3122,6 @@ class OtherCog(commands.Cog):
     
     @commands.command(aliases=['mtl', 'challenges'])
     async def mtlist(self, ctx):
-        """List your pending typing challenges"""
         if ctx.author.id not in self.pending_challenges or not self.pending_challenges[ctx.author.id]:
             await ctx.send("You don't have any pending typing challenges.")
             return
@@ -3271,7 +3169,6 @@ class OtherCog(commands.Cog):
         await ctx.send(embed=embed)
     
     async def create_typing_test_image(self, words):
-        """Create an image with the words for the typing test"""
         try:
             # Create a blank image with white background
             width = 1000

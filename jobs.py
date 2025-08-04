@@ -14,7 +14,6 @@ class JobMarketView(discord.ui.View):
         self.page = page
         self.total_pages = total_pages
         
-        # Add previous page button if not on first page
         if page > 1:
             prev_button = discord.ui.Button(
                 label="Previous",
@@ -26,7 +25,6 @@ class JobMarketView(discord.ui.View):
             prev_button.callback = self.prev_callback
             self.add_item(prev_button)
         
-        # Add next page button if not on last page
         if page < total_pages:
             next_button = discord.ui.Button(
                 label="Next",
@@ -217,12 +215,10 @@ class JobMarketCog(commands.Cog):
         return True
 
     def get_user_jobs(self, user_id: str) -> List[str]:
-        """Get list of jobs unlocked by a specific user"""
         return self.user_jobs.get(user_id, [])
 
     @commands.command()
     async def jobs(self, ctx, page: int = 1):
-        """Display available jobs in the job market"""
         await self.open_account(ctx.author)
         
         user_id = str(ctx.author.id)
@@ -282,7 +278,6 @@ class JobMarketCog(commands.Cog):
 
     @commands.command()
     async def buyjob(self, ctx, *, job_name: str = None):
-        """Purchase a job to unlock it"""
         await self.open_account(ctx.author)
         
         if not job_name:
@@ -374,7 +369,6 @@ class JobMarketCog(commands.Cog):
 
     @commands.command()
     async def removejob(self, ctx, *, job_name: str = None):
-        """Remove a job from your current jobs"""
         await self.open_account(ctx.author)
         
         if not job_name:
@@ -425,7 +419,6 @@ class JobMarketCog(commands.Cog):
     @commands.command()
     @commands.cooldown(1, 86400, commands.BucketType.user)  # 24 hour cooldown
     async def work(self, ctx):
-        """Work at all your jobs to earn money"""
         await self.open_account(ctx.author)
         self.rotate_jobs()
         
@@ -526,7 +519,6 @@ class JobMarketCog(commands.Cog):
 
     @commands.command()
     async def myjobs(self, ctx):
-        """Display your currently owned jobs"""
         await self.open_account(ctx.author)
         
         user_id = str(ctx.author.id)
@@ -794,12 +786,10 @@ class JobMarketCog(commands.Cog):
         return True
 
     def get_user_jobs(self, user_id: str) -> List[str]:
-        """Get list of jobs unlocked by a specific user"""
         return self.user_jobs.get(user_id, [])
 
     @commands.command()
     async def jobs(self, ctx, page: int = 1):
-        """Display available jobs in the job market"""
         await self.open_account(ctx.author)
         
         user_id = str(ctx.author.id)
@@ -859,7 +849,6 @@ class JobMarketCog(commands.Cog):
 
     @commands.command()
     async def buyjob(self, ctx, *, job_name: str = None):
-        """Purchase a job to unlock it"""
         await self.open_account(ctx.author)
         
         if not job_name:
@@ -951,7 +940,6 @@ class JobMarketCog(commands.Cog):
 
     @commands.command()
     async def removejob(self, ctx, *, job_name: str = None):
-        """Remove a job from your current jobs"""
         await self.open_account(ctx.author)
         
         if not job_name:
@@ -1002,7 +990,6 @@ class JobMarketCog(commands.Cog):
     @commands.command()
     @commands.cooldown(1, 86400, commands.BucketType.user)  # 24 hour cooldown
     async def work(self, ctx):
-        """Work at all your jobs to earn money"""
         await self.open_account(ctx.author)
         self.rotate_jobs()
         
@@ -1103,7 +1090,6 @@ class JobMarketCog(commands.Cog):
 
     @commands.command()
     async def myjobs(self, ctx):
-        """Display your currently owned jobs"""
         await self.open_account(ctx.author)
         
         user_id = str(ctx.author.id)

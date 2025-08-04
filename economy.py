@@ -486,7 +486,6 @@ class EconomyCog(commands.Cog):
 
     @commands.command(aliases=["baltop"])
     async def balancetop(self, ctx, page: int = 1):
-        """Show the server's balance leaderboard"""
         # Get all user data from the database file directly
         users = await self.get_bank_data()
         
@@ -588,7 +587,6 @@ class EconomyCog(commands.Cog):
         view.message = await ctx.send(embed=embed, view=view)
 
     async def add_balance(self, user_id, amount):
-        """Add balance to a user's account (admin command)"""
         users = await self.get_bank_data()
         
         # Convert user_id to string for consistency
@@ -610,7 +608,6 @@ class EconomyCog(commands.Cog):
         return users[user_id]["wallet"]
     
     async def remove_balance(self, user_id, amount):
-        """Remove balance from a user's account (admin command)"""
         users = await self.get_bank_data()
         
         # Convert user_id to string for consistency
@@ -1131,7 +1128,6 @@ class EconomyCog(commands.Cog):
 
     @commands.command(aliases=["baltop"])
     async def balancetop(self, ctx, page: int = 1):
-        """Show the server's balance leaderboard"""
         # Get all user data from the database file directly
         users = await self.get_bank_data()
         
@@ -1233,7 +1229,6 @@ class EconomyCog(commands.Cog):
         view.message = await ctx.send(embed=embed, view=view)
 
     async def add_balance(self, user_id, amount):
-        """Add balance to a user's account (admin command)"""
         users = await self.get_bank_data()
         
         # Convert user_id to string for consistency
@@ -1255,7 +1250,6 @@ class EconomyCog(commands.Cog):
         return users[user_id]["wallet"]
     
     async def remove_balance(self, user_id, amount):
-        """Remove balance from a user's account (admin command)"""
         users = await self.get_bank_data()
         
         # Convert user_id to string for consistency

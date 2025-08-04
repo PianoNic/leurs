@@ -17,7 +17,6 @@ class BlockedTermsCog(commands.Cog):
         asyncio.create_task(self.ensure_files_exist())
         
     async def ensure_files_exist(self):
-        """Ensure required JSON files exist"""
         if not os.path.exists(self.blocked_terms_file):
             with open(self.blocked_terms_file, 'w') as f:
                 json.dump({}, f)
@@ -27,7 +26,6 @@ class BlockedTermsCog(commands.Cog):
                 json.dump({}, f)
     
     async def load_blocked_terms(self):
-        """Load blocked terms from JSON file"""
         try:
             with open(self.blocked_terms_file, 'r') as f:
                 return json.load(f)
@@ -35,12 +33,10 @@ class BlockedTermsCog(commands.Cog):
             return {}
     
     async def save_blocked_terms(self, terms):
-        """Save blocked terms to JSON file"""
         with open(self.blocked_terms_file, 'w') as f:
             json.dump(terms, f, indent=4)
     
     async def load_punishments(self):
-        """Load punishment history from JSON file"""
         try:
             with open(self.punishments_file, 'r') as f:
                 return json.load(f)
@@ -48,12 +44,10 @@ class BlockedTermsCog(commands.Cog):
             return {}
     
     async def save_punishments(self, punishments):
-        """Save punishment history to JSON file"""
         with open(self.punishments_file, 'w') as f:
             json.dump(punishments, f, indent=4)
     
     async def add_punishment_record(self, user_id, guild_id, punishment_type, reason, duration=None, moderator=None):
-        """Add a punishment record to the history"""
         punishments = await self.load_punishments()
         user_key = f"{user_id}_{guild_id}"
         
@@ -72,7 +66,6 @@ class BlockedTermsCog(commands.Cog):
         await self.save_punishments(punishments)
     
     async def normalize_text(self, text):
-        """Normalize text for comparison - removes special characters, numbers, repeated chars"""
         # Convert to lowercase
         text = text.lower()
         # Remove accents and special characters
@@ -89,7 +82,6 @@ class BlockedTermsCog(commands.Cog):
         return text
     
     async def check_blocked_term(self, message_content, blocked_terms):
-        """Check if message contains any blocked terms"""
         normalized_message = await self.normalize_text(message_content)
         
         for term, data in blocked_terms.items():
@@ -106,7 +98,6 @@ class BlockedTermsCog(commands.Cog):
         return None, None
     
     async def parse_duration(self, duration_str):
-        """Parse duration string to seconds"""
         if not duration_str:
             return None
         
@@ -133,15 +124,6 @@ class BlockedTermsCog(commands.Cog):
     @commands.has_permissions(administrator=True)
     async def block_term(self, ctx, term: str, punishment_type: str, duration: str = None, 
                         advanced_filtering: str = "false", *, custom_text: str = None):
-        """
-        Block a term with specified punishment
-        Usage: blockterm [term] [punishment_type] [duration] [advanced_filtering] [custom_text]
-        
-        punishment_type: mute, warn, kick, ban
-        duration: For mute/ban - format like 5s, 10m, 5h, 12d
-        advanced_filtering: true/false - enables bypass-resistant filtering
-        custom_text: Custom message to send when term is detected
-        """
         punishment_type = punishment_type.lower()
         
         if punishment_type not in ['mute', 'warn', 'kick', 'ban']:
@@ -201,7 +183,6 @@ class BlockedTermsCog(commands.Cog):
     @commands.command(name='unblockterm')
     @commands.has_permissions(administrator=True)
     async def unblock_term(self, ctx, *, term: str):
-        """Remove a blocked term"""
         blocked_terms = await self.load_blocked_terms()
         
         if term not in blocked_terms:
@@ -226,7 +207,6 @@ class BlockedTermsCog(commands.Cog):
     @commands.command(name='blockedterms')
     @commands.has_permissions(administrator=True)
     async def list_blocked_terms(self, ctx):
-        """List all blocked terms for this server"""
         blocked_terms = await self.load_blocked_terms()
         
         # Filter terms for this guild
@@ -248,7 +228,7 @@ class BlockedTermsCog(commands.Cog):
             color=discord.Color.blue()
         )
         
-        for term, data in list(guild_terms.items())[:10]:  # Limit to 10 terms per page
+        for term, data in list(guild_terms.items())[:25]:  # Limit to 10 terms per page
             punishment_info = data['punishment_type'].capitalize()
             if data.get('duration_str'):
                 punishment_info += f" ({data['duration_str']})"
@@ -268,7 +248,6 @@ class BlockedTermsCog(commands.Cog):
     
     @commands.Cog.listener()
     async def on_message(self, message):
-        """Check every message for blocked terms"""
         if message.author.bot:
             return
         
@@ -304,14 +283,12 @@ class BlockedTermsCog(commands.Cog):
             await self.apply_punishment(message, detected_term, term_data)
     
     async def apply_punishment(self, message, detected_term, term_data):
-        """Apply the specified punishment"""
         user = message.author
         guild = message.guild
         punishment_type = term_data['punishment_type']
         duration = term_data.get('duration')
         custom_text = term_data.get('custom_text', f"Used blocked term: {detected_term}")
         
-        # Log channel
         log_channel = self.bot.get_channel(self.log_channel_id)
         
         try:
@@ -502,7 +479,6 @@ class BlockedTermsCog(commands.Cog):
                 await log_channel.send(embed=error_embed)
 
     async def parse_duration(self, duration_str):
-        """Parse duration string to seconds"""
         if not duration_str:
             return None
         
@@ -529,15 +505,7 @@ class BlockedTermsCog(commands.Cog):
     @commands.has_permissions(administrator=True)
     async def block_term(self, ctx, term: str, punishment_type: str, duration: str = None, 
                         advanced_filtering: str = "false", *, custom_text: str = None):
-        """
-        Block a term with specified punishment
-        Usage: blockterm [term] [punishment_type] [duration] [advanced_filtering] [custom_text]
-        
-        punishment_type: mute, warn, kick, ban
-        duration: For mute/ban - format like 5s, 10m, 5h, 12d
-        advanced_filtering: true/false - enables bypass-resistant filtering
-        custom_text: Custom message to send when term is detected
-        """
+
         punishment_type = punishment_type.lower()
         
         if punishment_type not in ['mute', 'warn', 'kick', 'ban']:
@@ -597,7 +565,6 @@ class BlockedTermsCog(commands.Cog):
     @commands.command(name='unblockterm')
     @commands.has_permissions(administrator=True)
     async def unblock_term(self, ctx, *, term: str):
-        """Remove a blocked term"""
         blocked_terms = await self.load_blocked_terms()
         
         if term not in blocked_terms:
@@ -622,7 +589,6 @@ class BlockedTermsCog(commands.Cog):
     @commands.command(name='blockedterms')
     @commands.has_permissions(administrator=True)
     async def list_blocked_terms(self, ctx):
-        """List all blocked terms for this server"""
         blocked_terms = await self.load_blocked_terms()
 
         # Filter terms for this guild
@@ -663,7 +629,6 @@ class BlockedTermsCog(commands.Cog):
     
     @commands.Cog.listener()
     async def on_message(self, message):
-        """Check every message for blocked terms"""
         if message.author.bot:
             return
         
@@ -699,7 +664,6 @@ class BlockedTermsCog(commands.Cog):
             await self.apply_punishment(message, detected_term, term_data)
     
     async def apply_punishment(self, message, detected_term, term_data):
-        """Apply the specified punishment"""
         user = message.author
         guild = message.guild
         punishment_type = term_data['punishment_type']
