@@ -15,11 +15,10 @@ lastfmKey = os.getenv("lastfm_key")
 class LastFMCog(commands.Cog):
     def __init__(self, client):
         self.client = client
-        # Ensure data directory exists
         if not os.path.exists('data'):
             os.makedirs('data')
 
-    # link lastfm account to bot
+    # link lastfm account
     @commands.command()
     async def login(self, ctx, lastfm_username):
         user_id = ctx.author.id

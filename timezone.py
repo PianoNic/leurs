@@ -260,7 +260,6 @@ class TimezoneCog(commands.Cog, name="timezone"):
 
     @commands.group(name="tz", invoke_without_command=True)
     async def timezone(self, ctx, member: discord.Member = None):
-        """View your timezone or someone else's timezone"""
         target_member = member or ctx.author
         user_id = str(target_member.id)
 
@@ -298,7 +297,6 @@ class TimezoneCog(commands.Cog, name="timezone"):
 
     @timezone.command(name="set")
     async def set_timezone(self, ctx, *, timezone_str: str):
-        """Set your timezone (can use timezone code or city name)"""
         timezone_id = self.find_timezone(timezone_str)
         
         if not timezone_id:
@@ -332,7 +330,6 @@ class TimezoneCog(commands.Cog, name="timezone"):
 
     @timezone.command(name="format")
     async def toggle_format(self, ctx):
-        """Toggle between 12-hour and 24-hour time format"""
         user_id = str(ctx.author.id)
         current_format = self.preferences.get(user_id, False)
         self.preferences[user_id] = not current_format

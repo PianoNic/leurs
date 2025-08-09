@@ -20,16 +20,13 @@ class LevelsCog(commands.Cog):
         self.voice_task = None  # Task for periodic voice time updates
         
     def cog_unload(self):
-        # Cancel the voice update task when the cog is unloaded
         if self.voice_task:
             self.voice_task.cancel()
             
     async def cog_load(self):
-        # Start voice update task when the cog is loaded
         self.voice_task = self.client.loop.create_task(self.voice_time_tracker())
         
     async def voice_time_tracker(self):
-        """Task that updates voice time for all users every minute"""
         try:
             while True:
                 # Update all users currently in voice channels
@@ -224,7 +221,6 @@ class LevelsCog(commands.Cog):
     
     @commands.command(aliases=["xp", "lvl", "rank"])
     async def level(self, ctx, member: discord.Member = None):
-        """Check your level or another member's level"""
         try:
             if member is None:
                 member = ctx.author
@@ -297,14 +293,12 @@ class LevelsCog(commands.Cog):
             print(f"Error in level command: {str(e)}")
         
     def create_progress_bar(self, percentage, length=10):
-        """Creates a text-based progress bar"""
         filled_bars = math.floor(percentage / (100 / length))
         empty_bars = length - filled_bars
         return "🟦" * filled_bars + "⬜" * empty_bars
         
     @commands.command(aliases=["lvltop"])
     async def leveltop(self, ctx, page: int = 1):
-        """Show the server's message level leaderboard"""
         try:
             # Get all user data from the database file directly
             users = await self.get_levels_data()
@@ -413,7 +407,6 @@ class LevelsCog(commands.Cog):
 
     @commands.command(aliases=["voicetop", "vtop"])
     async def voicelevels(self, ctx, page: int = 1):
-        """Show the server's voice time leaderboard"""
         # Get all user data from the database file directly
         users = await self.get_voice_data()
         
@@ -534,7 +527,6 @@ class LevelsCog(commands.Cog):
         view.message = await ctx.send(embed=embed, view=view)
         
     async def check_user(self, user):
-        """Check if user exists in database, create if not"""
         users = await self.get_levels_data()
         user_id = str(user.id)
         
@@ -553,7 +545,6 @@ class LevelsCog(commands.Cog):
         return True
         
     async def get_levels_data(self):
-        """Get level data from JSON file"""
         if not os.path.exists('data'):
             os.makedirs('data')
         
@@ -578,7 +569,6 @@ class LevelsCog(commands.Cog):
         return users
 
     async def get_voice_data(self):
-        """Get voice level data from JSON file"""
         if not os.path.exists('data'):
             os.makedirs('data')
         
@@ -605,7 +595,6 @@ class LevelsCog(commands.Cog):
     @commands.command()
     @commands.has_permissions(administrator=True)
     async def setlevel(self, ctx, member: discord.Member, messages: int):
-        """Admin command to set a user's level based on message count"""
         if messages < 0:
             raise commands.CommandError("Message count cannot be negative!")
             

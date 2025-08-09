@@ -32,6 +32,18 @@ class AdminCog(commands.Cog):
         # Nickname history file path
         self.nickname_file = self.data_dir / "nickname_history.json"
         
+        # Auto reactions file path
+        self.reactions_file = self.data_dir / "auto_reactions.json"
+        
+        # Reaction roles file path
+        self.reaction_roles_file = self.data_dir / "reaction_roles.json"
+        
+        # Warnings file path
+        self.warnings_file = self.data_dir / "warnings.json"
+        
+        # User actions file path
+        self.user_actions_file = self.data_dir / "user_actions.json"
+        
         # Initialize role saving task
         self.role_save_task = None
         self.last_save_time = None
@@ -42,6 +54,18 @@ class AdminCog(commands.Cog):
         
         # Initialize nickname history
         self.load_nickname_history()
+        
+        # Initialize auto reactions
+        self.auto_reactions = self.load_auto_reactions()
+        
+        # Initialize reaction roles
+        self.reaction_roles = self.load_reaction_roles()
+        
+        # Initialize warnings
+        self.warnings = self.load_warnings()
+        
+        # Initialize user actions
+        self.user_actions = self.load_user_actions()
 
     def cog_unload(self):
         # Cancel the role save task when the cog is unloaded
@@ -52,9 +76,293 @@ class AdminCog(commands.Cog):
         # Start the role save task when the cog is loaded
         self.role_save_task = self.client.loop.create_task(self.role_save_loop())
 
+    # Load user actions from file
+    def load_user_actions(self):
+        try:
+            if os.path.exists(self.user_actions_file):
+                with open(self.user_actions_file, 'r') as f:
+                    return json.load(f)
+            else:
+                # Create empty user actions file
+                with open(self.user_actions_file, 'w') as f:
+                    json.dump({}, f)
+                return {}
+        except Exception as e:
+            print(f"Error loading user actions: {e}")
+            return {}
+            
+    # Save user actions to file
+    def save_user_actions(self):
+        try:
+            with open(self.user_actions_file, 'w') as f:
+                json.dump(self.user_actions, f, indent=2)
+            return True
+        except Exception as e:
+            print(f"Error saving user actions: {e}")
+            return False
+            
+    # Add action to user history
+    async def add_user_action(self, guild_id, user_id, action_type, reason=None, duration=None):
+        try:
+            # Load current actions
+            if not self.user_actions:
+                self.user_actions = self.load_user_actions()
+            
+            # Initialize guild section if not exists
+            guild_id_str = str(guild_id)
+            if guild_id_str not in self.user_actions:
+                self.user_actions[guild_id_str] = {}
+                
+            # Initialize user section if not exists
+            user_id_str = str(user_id)
+            if user_id_str not in self.user_actions[guild_id_str]:
+                self.user_actions[guild_id_str][user_id_str] = []
+                
+            # Add new action with timestamp
+            action = {
+                "action": action_type,
+                "timestamp": datetime.utcnow().isoformat()
+            }
+            
+            if reason:
+                action["reason"] = reason
+                
+            if duration:
+                action["duration"] = duration
+                
+            self.user_actions[guild_id_str][user_id_str].append(action)
+            
+            # Save updated actions
+            self.save_user_actions()
+            return True
+        except Exception as e:
+            print(f"Error adding user action: {e}")
+            return False
+
+    # Load warnings from file
+    def load_warnings(self):
+        try:
+            if os.path.exists(self.warnings_file):
+                with open(self.warnings_file, 'r') as f:
+                    return json.load(f)
+            else:
+                # Create empty warnings file
+                with open(self.warnings_file, 'w') as f:
+                    json.dump({}, f)
+                return {}
+        except Exception as e:
+            print(f"Error loading warnings: {e}")
+            return {}
+            
+    # Save warnings to file
+    def save_warnings(self):
+        try:
+            with open(self.warnings_file, 'w') as f:
+                json.dump(self.warnings, f, indent=2)
+            return True
+        except Exception as e:
+            print(f"Error saving warnings: {e}")
+            return False
+            
+    # Add warning to history
+    async def add_warning(self, guild_id, user_id, reason):
+        try:
+            # Load current warnings
+            if not self.warnings:
+                self.warnings = self.load_warnings()
+            
+            # Initialize guild section if not exists
+            guild_id_str = str(guild_id)
+            if guild_id_str not in self.warnings:
+                self.warnings[guild_id_str] = {}
+                
+            # Initialize user section if not exists
+            user_id_str = str(user_id)
+            if user_id_str not in self.warnings[guild_id_str]:
+                self.warnings[guild_id_str][user_id_str] = []
+                
+            # Add new warning with timestamp
+            self.warnings[guild_id_str][user_id_str].append({
+                "reason": reason,
+                "timestamp": datetime.utcnow().isoformat()
+            })
+            
+            # Save updated warnings
+            self.save_warnings()
+            return True
+        except Exception as e:
+            print(f"Error adding warning: {e}")
+            return False
+
+    @commands.command()
+    @has_permissions(administrator=True)
+    async def warn(self, ctx, member: discord.Member, *, reason=None):
+        if reason is None:
+            reason = "No reason provided"
+            
+        try:
+            # Add warning to history
+            await self.add_warning(ctx.guild.id, member.id, reason)
+            
+            # Add to user actions - REMOVED to prevent double counting
+            # await self.add_user_action(ctx.guild.id, member.id, "warn", reason)
+            
+            # Create DM embed
+            dm_embed = discord.Embed(
+                title="Warning",
+                description=f"You have been warned in **{ctx.guild.name}**",
+                color=discord.Color.yellow()
+            )
+            dm_embed.add_field(name="Reason", value=reason, inline=False)
+            dm_embed.set_footer(text=f"Time: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')}")
+            
+            # Send DM to user
+            try:
+                await member.send(embed=dm_embed)
+                dm_sent = True
+            except discord.Forbidden:
+                dm_sent = False
+                
+            # Create confirmation embed for the channel
+            channel_embed = discord.Embed(
+                title="User Warned",
+                description=f"{member.mention} has been warned.",
+                color=discord.Color.yellow()
+            )
+            channel_embed.add_field(name="Reason", value=reason, inline=False)
+            
+            if not dm_sent:
+                channel_embed.add_field(name="Note", value="Could not send DM to user (DMs disabled)", inline=False)
+                
+            await ctx.send(embed=channel_embed)
+            
+        except Exception as e:
+            raise commands.CommandError(f"Failed to warn user: {str(e)}")
+
+    @commands.command(aliases=["o"])
+    @has_permissions(administrator=True)
+    async def overview(self, ctx, member: discord.Member):
+
+        try:
+            guild_id_str = str(ctx.guild.id)
+            user_id_str = str(member.id)
+            
+            # Create embed
+            embed = discord.Embed(
+                title=f"User Overview: {member.display_name}",
+                description=f"History of admin actions for {member.mention}",
+                color=discord.Color.blue()
+            )
+            
+            # Add user info
+            embed.add_field(name="User ID", value=member.id, inline=True)
+            embed.add_field(name="Account Created", value=member.created_at.strftime("%Y-%m-%d"), inline=True)
+            embed.add_field(name="Joined Server", value=member.joined_at.strftime("%Y-%m-%d") if member.joined_at else "Unknown", inline=True)
+            
+            # Get warnings count
+            warnings_count = 0
+            if guild_id_str in self.warnings and user_id_str in self.warnings[guild_id_str]:
+                warnings_count = len(self.warnings[guild_id_str][user_id_str])
+            
+            # Get user actions
+            action_counts = {"ban": 0, "kick": 0, "mute": 0, "jail": 0, "warn": 0}
+            recent_actions = []
+            
+            if guild_id_str in self.user_actions and user_id_str in self.user_actions[guild_id_str]:
+                actions = self.user_actions[guild_id_str][user_id_str]
+                
+                # Count actions by type
+                for action in actions:
+                    action_type = action["action"]
+                    if action_type in action_counts:
+                        action_counts[action_type] += 1
+                    else:
+                        action_counts[action_type] = 1
+                
+                # Get 5 most recent actions
+                sorted_actions = sorted(actions, key=lambda x: x["timestamp"], reverse=True)
+                recent_actions = sorted_actions[:5]
+            
+            # Set warnings count from warnings file (not from user_actions)
+            action_counts["warn"] = warnings_count
+            
+            # Add action counts to embed
+            action_summary = "\n".join([f"**{action.title()}s:** {count}" for action, count in action_counts.items() if count > 0])
+            if action_summary:
+                embed.add_field(name="Action Summary", value=action_summary, inline=False)
+            else:
+                embed.add_field(name="Action Summary", value="No actions recorded", inline=False)
+            
+            # Add recent actions to embed
+            if recent_actions:
+                recent_list = []
+                for action in recent_actions:
+                    action_time = datetime.fromisoformat(action["timestamp"])
+                    time_str = action_time.strftime("%Y-%m-%d %H:%M")
+                    reason = action.get("reason", "No reason provided")
+                    duration = f" ({action['duration']})" if "duration" in action else ""
+                    
+                    recent_list.append(f"**{action['action'].title()}**{duration} - {time_str}\n> {reason}")
+                
+                embed.add_field(name="Recent Actions", value="\n\n".join(recent_list), inline=False)
+            
+            # Add warnings detail if any
+            if warnings_count > 0:
+                warnings = self.warnings[guild_id_str][user_id_str]
+                sorted_warnings = sorted(warnings, key=lambda x: x["timestamp"], reverse=True)
+                
+                # Only show up to 5 most recent warnings
+                warnings_to_show = sorted_warnings[:5]
+                warnings_list = []
+                
+                for i, warning in enumerate(warnings_to_show, 1):
+                    warning_time = datetime.fromisoformat(warning["timestamp"])
+                    time_str = warning_time.strftime("%Y-%m-%d %H:%M")
+                    reason = warning.get("reason", "No reason provided")
+                    
+                    warnings_list.append(f"**Warning {i}/{warnings_count}** - {time_str}\n> {reason}")
+                
+                if warnings_count > 5:
+                    warnings_list.append(f"*...and {warnings_count - 5} more warnings*")
+                    
+                embed.add_field(name="Warning History", value="\n\n".join(warnings_list), inline=False)
+            
+            await ctx.send(embed=embed)
+            
+        except Exception as e:
+            raise commands.CommandError(f"Failed to get user overview: {str(e)}")
+
+    @warn.error
+    @overview.error
+    async def admin_command_error(self, ctx, error):
+        if isinstance(error, commands.MissingPermissions):
+            embed = discord.Embed(
+                title="Permission Denied",
+                description="You don't have permission to use this command.",
+                color=discord.Color.red()
+            )
+            await ctx.send(embed=embed)
+            return True
+        elif isinstance(error, commands.MemberNotFound):
+            embed = discord.Embed(
+                title="Error",
+                description="Member not found.",
+                color=discord.Color.red()
+            )
+            await ctx.send(embed=embed)
+            return True
+        elif isinstance(error, commands.CommandError):
+            embed = discord.Embed(
+                title="Error",
+                description=str(error),
+                color=discord.Color.red()
+            )
+            await ctx.send(embed=embed)
+            return True
+        return False
+
     # Load nickname history from file
     def load_nickname_history(self):
-        """Load nickname history from JSON file"""
         try:
             if os.path.exists(self.nickname_file):
                 with open(self.nickname_file, 'r') as f:
@@ -70,7 +378,6 @@ class AdminCog(commands.Cog):
             
     # Save nickname history to file
     def save_nickname_history(self, history):
-        """Save nickname history to JSON file"""
         try:
             with open(self.nickname_file, 'w') as f:
                 json.dump(history, f, indent=2)
@@ -81,7 +388,6 @@ class AdminCog(commands.Cog):
             
     # Add nickname change to history
     async def add_nickname_change(self, guild_id, user_id, old_nick, new_nick):
-        """Add a nickname change to the history"""
         try:
             # Load current history
             history = self.load_nickname_history()
@@ -112,7 +418,6 @@ class AdminCog(commands.Cog):
 
     # Get previous nickname from history
     async def get_previous_nickname(self, guild_id, user_id):
-        """Get the previous nickname for a user"""
         try:
             # Load current history
             history = self.load_nickname_history()
@@ -138,12 +443,6 @@ class AdminCog(commands.Cog):
     @commands.command()
     @has_permissions(administrator=True)
     async def nick(self, ctx, member: discord.Member = None, *, new_nickname = None):
-        """Change a user's nickname (Admin only)
-        
-        Usage:
-        !nick @user New Nickname - Change another user's nickname
-        !nick New Nickname - Change your own nickname
-        """
         # If no member is specified, use the command author
         if member is None and new_nickname is None:
             raise commands.CommandError("Please provide a nickname.")
@@ -178,12 +477,6 @@ class AdminCog(commands.Cog):
     @commands.command()
     @has_permissions(administrator=True)
     async def nickremove(self, ctx, member: discord.Member = None):
-        """Remove a user's nickname (Admin only)
-        
-        Usage:
-        !nickremove @user - Remove another user's nickname
-        !nickremove - Remove your own nickname
-        """
         # If no member is specified, use the command author
         if member is None:
             member = ctx.author
@@ -213,12 +506,6 @@ class AdminCog(commands.Cog):
     @commands.command()
     @has_permissions(administrator=True)
     async def nickrevert(self, ctx, member: discord.Member = None):
-        """Revert a user's nickname to their previous one (Admin only)
-        
-        Usage:
-        !nickrevert @user - Revert another user's nickname
-        !nickrevert - Revert your own nickname
-        """
         # If no member is specified, use the command author
         if member is None:
             member = ctx.author
@@ -283,11 +570,6 @@ class AdminCog(commands.Cog):
         
     @commands.command()
     async def nickme(self, ctx, *, new_nickname=None):
-        """Change your own nickname
-        
-        Usage:
-        !nickme New Nickname - Change your own nickname
-        """
         if new_nickname is None:
             raise commands.CommandError("Please provide a new nickname.")
             
@@ -315,11 +597,6 @@ class AdminCog(commands.Cog):
             
     @commands.command()
     async def nickmeremove(self, ctx):
-        """Remove your own nickname
-        
-        Usage:
-        !nickmeremove - Remove your own nickname
-        """
         try:
             # Store the old nickname before removing
             old_nickname = ctx.author.nick or ctx.author.name
@@ -344,11 +621,6 @@ class AdminCog(commands.Cog):
             
     @commands.command()
     async def nickmerevert(self, ctx):
-        """Revert your nickname to your previous one
-        
-        Usage:
-        !nickmerevert - Revert your own nickname
-        """
         try:
             # Get the previous nickname
             previous_nickname = await self.get_previous_nickname(ctx.guild.id, ctx.author.id)
@@ -392,7 +664,6 @@ class AdminCog(commands.Cog):
         return False
         
     async def role_save_loop(self):
-        """Loop that saves roles every 6 hours"""
         await self.client.wait_until_ready()
         while not self.client.is_closed():
             try:
@@ -415,7 +686,6 @@ class AdminCog(commands.Cog):
                 await asyncio.sleep(300)  # 5 minutes
 
     async def save_roles(self, guild):
-        """Save roles for all members in a guild"""
         try:
             # Load existing saved roles if any
             saved_roles = {}
@@ -447,7 +717,6 @@ class AdminCog(commands.Cog):
             return False
 
     def load_role_save_info(self):
-        """Load role save timing information"""
         try:
             if os.path.exists(self.roles_info_file):
                 with open(self.roles_info_file, 'r') as f:
@@ -464,7 +733,6 @@ class AdminCog(commands.Cog):
             self.next_save_time = datetime.utcnow() + timedelta(hours=6)
 
     def save_role_save_info(self):
-        """Save role save timing information"""
         try:
             info = {
                 'last_save': self.last_save_time.isoformat() if self.last_save_time else None,
@@ -478,7 +746,6 @@ class AdminCog(commands.Cog):
 
     @commands.Cog.listener()
     async def on_member_join(self, member):
-        """Restore roles when a member rejoins the server"""
         # Skip bots
         if member.bot:
             return
@@ -527,12 +794,6 @@ class AdminCog(commands.Cog):
     @commands.command()
     @has_permissions(administrator=True)
     async def saveroles(self, ctx, option: str = None):
-        """Save roles for all members or show save info
-        
-        Usage:
-        !saveroles - Save roles now
-        !saveroles info - Show last and next save times
-        """
         if option and option.lower() == "info":
             # Show save info
             if not self.last_save_time:
@@ -623,8 +884,11 @@ class AdminCog(commands.Cog):
     @commands.command()
     @has_permissions(administrator=True)
     async def ban(self, ctx, member: discord.Member, *, reason=None):
-        """Ban a member from the server"""
         await member.ban(reason=reason)
+        
+        # Add to user actions
+        await self.add_user_action(ctx.guild.id, member.id, "ban", reason)
+        
         embed = discord.Embed(
             title="Ban",
             description=f"{member.mention} has been banned.\nReason: {reason or 'No reason provided'}",
@@ -635,8 +899,11 @@ class AdminCog(commands.Cog):
     @commands.command()
     @has_permissions(administrator=True)
     async def kick(self, ctx, member: discord.Member, *, reason=None):
-        """Kick a member from the server"""
         await member.kick(reason=reason)
+        
+        # Add to user actions
+        await self.add_user_action(ctx.guild.id, member.id, "kick", reason)
+        
         embed = discord.Embed(
             title="Kick",
             description=f"{member.mention} has been kicked.\nReason: {reason or 'No reason provided'}",
@@ -647,15 +914,16 @@ class AdminCog(commands.Cog):
     @commands.command()
     @has_permissions(administrator=True)
     async def mute(self, ctx, member: discord.Member, duration: str = "10m", *, reason=None):
-        """Mute a member for a specified duration (e.g., '60s' for seconds, '10m' for minutes)"""
         muted_role = await self.get_or_create_muted_role(ctx)
         if muted_role in member.roles:
             raise commands.CommandError(f"{member.mention} is already muted.")
         
+        # Add to user actions
+        await self.add_user_action(ctx.guild.id, member.id, "mute", reason, duration)
+        
         await self.apply_mute(ctx, member, muted_role, duration, reason)
 
     async def get_or_create_muted_role(self, ctx):
-        """Retrieve or create the 'Muted' role."""
         muted_role = discord.utils.get(ctx.guild.roles, name="Muted")
         if not muted_role:
             muted_role = await ctx.guild.create_role(name="Muted")
@@ -664,7 +932,6 @@ class AdminCog(commands.Cog):
         return muted_role
 
     async def apply_mute(self, ctx, member, muted_role, duration, reason):
-        """Apply the mute to the member."""
         await member.add_roles(muted_role)
         embed = discord.Embed(
             title="Mute",
@@ -676,7 +943,6 @@ class AdminCog(commands.Cog):
         asyncio.create_task(self.schedule_unmute(ctx, member, muted_role, duration))
 
     async def schedule_unmute(self, ctx, member, muted_role, duration):
-        """Schedule the unmute after the specified duration."""
         if duration.endswith('s'):
             duration_seconds = int(duration[:-1])
         elif duration.endswith('m'):
@@ -710,7 +976,6 @@ class AdminCog(commands.Cog):
     @commands.command()
     @has_permissions(administrator=True)
     async def unmute(self, ctx, member: discord.Member):
-        """Unmute a member"""
         muted_role = discord.utils.get(ctx.guild.roles, name="Muted")
         if muted_role and muted_role in member.roles:
             await member.remove_roles(muted_role)
@@ -726,7 +991,6 @@ class AdminCog(commands.Cog):
     @commands.command()
     @has_permissions(administrator=True)
     async def addbalance(self, ctx, member: discord.Member, amount: int):
-        """Add balance to a user's account"""
         economy_cog = self.client.get_cog("EconomyCog")
         if economy_cog:
             await economy_cog.add_balance(member.id, amount)
@@ -742,7 +1006,6 @@ class AdminCog(commands.Cog):
     @commands.command()
     @has_permissions(administrator=True)
     async def removebalance(self, ctx, member: discord.Member, amount: int):
-        """Remove balance from a user's account"""
         economy_cog = self.client.get_cog("EconomyCog")
         if economy_cog:
             await economy_cog.remove_balance(member.id, amount)
@@ -758,7 +1021,6 @@ class AdminCog(commands.Cog):
     @commands.command()
     @has_permissions(administrator=True)
     async def grant(self, ctx, member: discord.Member, time: str = None):
-        """Grant a special role to a user for a specified duration (e.g., '30s', '5m', '2h', '7d') or permanently if no time specified"""
         try:
             role = ctx.guild.get_role(1225863450308378644)
             if not role:
@@ -820,7 +1082,6 @@ class AdminCog(commands.Cog):
     @commands.command()
     @has_permissions(administrator=True)
     async def ungrant(self, ctx, member: discord.Member, time: str = None):
-        """Temporarily remove the special role from a user for specified duration (e.g., '30s', '5m', '2h', '7d') or permanently if no time specified"""
         try:
             role = ctx.guild.get_role(1225863450308378644)
             if not role:
@@ -889,7 +1150,6 @@ class AdminCog(commands.Cog):
     @commands.command()
     @has_permissions(administrator=True)
     async def clear(self, ctx, amount: int):
-        """Clear a specified number of messages from the channel"""
         try:
             # Add 1 to include the command message itself
             amount = amount + 1
@@ -921,8 +1181,7 @@ class AdminCog(commands.Cog):
 
     @commands.command()
     @has_permissions(administrator=True)
-    async def jail(self, ctx, member: discord.Member, time: str = None):
-        """Jail a user for a specified duration (e.g., '30s', '5m', '2h', '7d') or permanently if no time specified"""
+    async def jail(self, ctx, member: discord.Member, time: str = None, *, reason=None):
         try:
             role = ctx.guild.get_role(1211618366763044874)
             if not role:
@@ -932,6 +1191,7 @@ class AdminCog(commands.Cog):
             if not time or time.lower() in ['perm', 'permanent']:
                 duration_seconds = None
                 time_str = "permanently"
+                duration = "permanent"
             else:
                 # Regular expression to parse time format
                 time_pattern = re.compile(r'(\d+)([smhd])')
@@ -950,6 +1210,10 @@ class AdminCog(commands.Cog):
                 # Create human-readable time string
                 units = {'s': 'seconds', 'm': 'minutes', 'h': 'hours', 'd': 'days'}
                 time_str = f"for {amount} {units[unit]}"
+                duration = time
+
+            # Add to user actions
+            await self.add_user_action(ctx.guild.id, member.id, "jail", reason, duration)
 
             # Add role
             await member.add_roles(role)
@@ -983,8 +1247,109 @@ class AdminCog(commands.Cog):
 
     @commands.command()
     @has_permissions(administrator=True)
+    async def reaction(self, ctx, term: str = None, emoji: str = None):
+        if term is None:
+            await ctx.send("Usage: `!reaction [term] [emoji]` or `!reaction list` or `!reaction remove [term]`")
+            return
+            
+        guild_id = str(ctx.guild.id)
+        
+        # Initialize guild section if not exists
+        if guild_id not in self.auto_reactions:
+            self.auto_reactions[guild_id] = {}
+            
+        # List all reactions
+        if term.lower() == "list":
+            if not self.auto_reactions.get(guild_id):
+                await ctx.send("No auto reactions set up for this server.")
+                return
+                
+            embed = discord.Embed(
+                title="Auto Reactions",
+                description="Terms that trigger auto reactions",
+                color=discord.Color.blue()
+            )
+            
+            for term, emoji in self.auto_reactions[guild_id].items():
+                embed.add_field(name=term, value=emoji, inline=True)
+                
+            await ctx.send(embed=embed)
+            return
+            
+        # Remove a reaction
+        if term.lower() == "remove":
+            if emoji is None:
+                await ctx.send("Please specify a term to remove.")
+                return
+                
+            if emoji in self.auto_reactions.get(guild_id, {}):
+                del self.auto_reactions[guild_id][emoji]
+                self.save_auto_reactions()
+                await ctx.send(f"Removed auto reaction for term: `{emoji}`")
+            else:
+                await ctx.send(f"No auto reaction found for term: `{emoji}`")
+            return
+            
+        # Add new reaction
+        if emoji is None:
+            await ctx.send("Please provide both a term and an emoji.")
+            return
+            
+        # Try to find the emoji in the server
+        try:
+            # Check if it's a custom emoji
+            if emoji.startswith('<:') and emoji.endswith('>'):
+                emoji_id = int(emoji.split(':')[2][:-1])
+                emoji_obj = discord.utils.get(ctx.guild.emojis, id=emoji_id)
+                if emoji_obj is None:
+                    await ctx.send(f"Emoji {emoji} not found in this server. The bot must have access to the emoji.")
+                    return
+            # Test if it's a Unicode emoji by trying to add it as a reaction
+            else:
+                test_msg = await ctx.send("Testing emoji...")
+                try:
+                    await test_msg.add_reaction(emoji)
+                    await test_msg.delete()
+                except discord.errors.HTTPException:
+                    await test_msg.delete()
+                    await ctx.send(f"Invalid emoji: {emoji}")
+                    return
+                    
+            # Add the reaction to our dictionary
+            self.auto_reactions[guild_id][term] = emoji
+            self.save_auto_reactions()
+            
+            await ctx.send(f"Added auto reaction: When someone mentions `{term}`, I'll react with {emoji}")
+            
+        except Exception as e:
+            await ctx.send(f"Error setting up auto reaction: {str(e)}")
+    
+    @commands.command()
+    @has_permissions(administrator=True)
+    async def reactionremove(self, ctx, *, term: str = None):
+        if term is None:
+            await ctx.send("Please specify a term to remove: `!reactionremove [term]`")
+            return
+            
+        guild_id = str(ctx.guild.id)
+        
+        # Check if guild has any reactions
+        if guild_id not in self.auto_reactions or not self.auto_reactions[guild_id]:
+            await ctx.send("No auto reactions set up for this server.")
+            return
+            
+        # Check if term exists
+        if term in self.auto_reactions[guild_id]:
+            emoji = self.auto_reactions[guild_id][term]
+            del self.auto_reactions[guild_id][term]
+            self.save_auto_reactions()
+            await ctx.send(f"Removed auto reaction: `{term}` → {emoji}")
+        else:
+            await ctx.send(f"No auto reaction found for term: `{term}`")
+    
+    @commands.command()
+    @has_permissions(administrator=True)
     async def unjail(self, ctx, member: discord.Member, time: str = None):
-        """Temporarily release a user from jail for specified duration (e.g., '30s', '5m', '2h', '7d') or permanently if no time specified"""
         try:
             role = ctx.guild.get_role(1211618366763044874)
             if not role:
@@ -1053,14 +1418,6 @@ class AdminCog(commands.Cog):
     @commands.command()
     @has_permissions(administrator=True)
     async def cclear(self, ctx, *args):
-        """Clear messages containing specific text. Usage:
-        cclear [text] - Search in all channels
-        cclear -current [text] - Search only in current channel
-        cclear [@user] [text] - Search messages from specific user
-        cclear -scan - Scan and cache all messages
-        cclear -p [percentage] [text] - Delete only specified percentage of matches
-        cclear yes/no - Confirm or cancel pending deletion"""
-        
         if not args:
             raise commands.CommandError("Please provide search text or yes/no for confirmation.")
 
@@ -1146,7 +1503,6 @@ class AdminCog(commands.Cog):
         await ctx.send(embed=embed)
 
     async def scan_all_messages(self, ctx):
-        """Scan and cache all messages in the server"""
         status_msg = await ctx.send(embed=discord.Embed(
             title="Scanning Messages",
             description="Starting scan... This might take a while.",
@@ -1238,7 +1594,6 @@ class AdminCog(commands.Cog):
             await ctx.send(f"Error saving cache: {str(e)}")
 
     def load_cache(self):
-        """Load cache files into memory"""
         try:
             # Load messages
             with open(self.message_cache_file, 'r', encoding='utf-8') as f:
@@ -1253,7 +1608,6 @@ class AdminCog(commands.Cog):
             raise commands.CommandError("Error reading cache files. Please run `cclear -scan` again.")
 
     async def search_cached_messages(self, ctx, search_text, current_channel_only, target_user):
-        """Search through cached messages using the word index"""
         status_msg = await ctx.send(embed=discord.Embed(
             title="Searching Messages",
             description="Reading cache files...",
@@ -1310,7 +1664,6 @@ class AdminCog(commands.Cog):
         return messages_to_delete
 
     async def handle_cclear_confirmation(self, ctx, response):
-        """Handle the confirmation response for cclear command"""
         if ctx.author.id not in self.pending_cclear:
             raise commands.CommandError("No pending clear operation. Please start a new search.")
 
@@ -1421,8 +1774,30 @@ class AdminCog(commands.Cog):
         )
         await ctx.send(embed=embed)
 
+    def load_auto_reactions(self):
+        try:
+            if os.path.exists(self.reactions_file):
+                with open(self.reactions_file, 'r') as f:
+                    return json.load(f)
+            else:
+                # Create empty auto reactions file
+                with open(self.reactions_file, 'w') as f:
+                    json.dump({}, f)
+                return {}
+        except Exception as e:
+            print(f"Error loading auto reactions: {e}")
+            return {}
+
+    def save_auto_reactions(self):
+        try:
+            with open(self.reactions_file, 'w') as f:
+                json.dump(self.auto_reactions, f, indent=2)
+            return True
+        except Exception as e:
+            print(f"Error saving auto reactions: {e}")
+            return False
+            
     def is_cache_recent(self):
-        """Check if cache exists and is less than 24 hours old"""
         try:
             if not os.path.exists(self.last_scan_file) or not os.path.exists(self.message_cache_file):
                 return False
@@ -1435,6 +1810,175 @@ class AdminCog(commands.Cog):
         except:
             return False
 
+    @commands.Cog.listener()
+    async def on_message(self, message):
+        # Ignore messages from bots
+        if message.author.bot:
+            return
+            
+        # Check if we have auto reactions for this guild
+        guild_id = str(message.guild.id) if message.guild else None
+        if not guild_id or guild_id not in self.auto_reactions:
+            return
+            
+        # Check message content for trigger terms
+        for term, emoji in self.auto_reactions[guild_id].items():
+            if term.lower() in message.content.lower():
+                try:
+                    await message.add_reaction(emoji)
+                except Exception as e:
+                    print(f"Error adding reaction {emoji}: {e}")
+    
+    @commands.command()
+    @has_permissions(administrator=True)
+    async def embed(self, ctx, color: str = None, *, text: str = None):
+        # Delete the command message
+        try:
+            await ctx.message.delete()
+        except:
+            pass
+            
+        # Check if this is a reply to another message
+        reference = ctx.message.reference
+        if reference and reference.message_id:
+            try:
+                # Get the message being replied to
+                replied_msg = await ctx.channel.fetch_message(reference.message_id)
+                
+                # Use the replied message's content as text
+                if text is None:
+                    text = replied_msg.content
+                
+                # Set up the embed color
+                embed_color = self.parse_color(color)
+                
+                # Create the embed
+                embed = discord.Embed(
+                    description=text,
+                    color=embed_color
+                )
+                
+                # Add author information
+                embed.set_author(
+                    name=replied_msg.author.display_name,
+                    icon_url=replied_msg.author.display_avatar.url
+                )
+                
+                # Add timestamp
+                embed.timestamp = replied_msg.created_at
+                
+                # Add attachments if any
+                if replied_msg.attachments:
+                    # If there's an image, set it as the embed image
+                    for attachment in replied_msg.attachments:
+                        if attachment.content_type and attachment.content_type.startswith('image/'):
+                            embed.set_image(url=attachment.url)
+                            break
+                
+                await ctx.send(embed=embed)
+                
+                # Try to delete the original message if bot has permissions
+                try:
+                    await replied_msg.delete()
+                except:
+                    pass
+                    
+                return
+            except discord.NotFound:
+                # Message not found, continue with normal embed
+                pass
+                
+        # Check if text is provided
+        if text is None:
+            if color is None:
+                # Neither color nor text provided
+                raise commands.CommandError("Please provide text for the embed.")
+            else:
+                # Only color provided, use it as text and set color to default
+                text = color
+                color = None
+                
+        # Set up the embed color
+        embed_color = self.parse_color(color)
+        
+        # Create and send the embed
+        embed = discord.Embed(
+            description=text,
+            color=embed_color
+        )
+        
+        await ctx.send(embed=embed)
+        
+    def parse_color(self, color):
+        # Default color
+        embed_color = discord.Color.light_grey()
+        
+        if color:
+            # Check if it's a hex code
+            if color.startswith('#'):
+                color = color[1:]  # Remove the # if present
+                
+            try:
+                # Try to interpret as hex code
+                if len(color) == 6:
+                    # Convert hex to decimal
+                    r = int(color[0:2], 16)
+                    g = int(color[2:4], 16)
+                    b = int(color[4:6], 16)
+                    embed_color = discord.Color.from_rgb(r, g, b)
+                else:
+                    # Check for named colors
+                    color_lower = color.lower()
+                    if color_lower == "red":
+                        embed_color = discord.Color.red()
+                    elif color_lower == "blue":
+                        embed_color = discord.Color.blue()
+                    elif color_lower == "green":
+                        embed_color = discord.Color.green()
+                    elif color_lower == "yellow":
+                        embed_color = discord.Color.yellow()
+                    elif color_lower == "orange":
+                        embed_color = discord.Color.orange()
+                    elif color_lower == "purple":
+                        embed_color = discord.Color.purple()
+                    elif color_lower == "gold":
+                        embed_color = discord.Color.gold()
+                    elif color_lower == "black":
+                        embed_color = discord.Color.default()
+                    elif color_lower == "white":
+                        embed_color = discord.Color.from_rgb(255, 255, 255)
+                    elif color_lower == "teal":
+                        embed_color = discord.Color.teal()
+                    elif color_lower == "magenta":
+                        embed_color = discord.Color.magenta()
+                    elif color_lower == "blurple":
+                        embed_color = discord.Color.blurple()
+                    elif color_lower == "dark_blue":
+                        embed_color = discord.Color.dark_blue()
+                    elif color_lower == "dark_green":
+                        embed_color = discord.Color.dark_green()
+                    elif color_lower == "dark_red":
+                        embed_color = discord.Color.dark_red()
+                    elif color_lower == "dark_purple":
+                        embed_color = discord.Color.dark_purple()
+                    elif color_lower == "dark_orange":
+                        embed_color = discord.Color.dark_orange()
+                    elif color_lower == "dark_gold":
+                        embed_color = discord.Color.dark_gold()
+                    elif color_lower == "dark_teal":
+                        embed_color = discord.Color.dark_teal()
+                    elif color_lower == "dark_magenta":
+                        embed_color = discord.Color.dark_magenta()
+            except ValueError:
+                # If color parsing fails, use default
+                embed_color = discord.Color.light_grey()
+                
+        return embed_color
+
+    @cclear.error
+    @reaction.error
+    @reactionremove.error
+    @embed.error
     @ban.error
     @kick.error
     @mute.error
@@ -1446,7 +1990,6 @@ class AdminCog(commands.Cog):
     @jail.error
     @unjail.error
     @clear.error
-    @cclear.error
     async def admin_command_error(self, ctx, error):
         if isinstance(error, commands.MissingPermissions):
             embed = discord.Embed(
@@ -1455,7 +1998,7 @@ class AdminCog(commands.Cog):
                 color=discord.Color.red()
             )
             await ctx.send(embed=embed)
-            return True  # Signal that we handled this error
+            return True
         elif isinstance(error, commands.MemberNotFound):
             embed = discord.Embed(
                 title="Error",
@@ -1463,7 +2006,7 @@ class AdminCog(commands.Cog):
                 color=discord.Color.red()
             )
             await ctx.send(embed=embed)
-            return True  # Signal that we handled this error
+            return True
         elif isinstance(error, commands.BadArgument):
             embed = discord.Embed(
                 title="Error",
@@ -1487,8 +2030,165 @@ class AdminCog(commands.Cog):
                 color=discord.Color.red()
             )
             await ctx.send(embed=embed)
-            return True  # Signal that we handled this error
-        return False  # Signal that we did not handle this error
+            return True
+        return False
+
+    def load_reaction_roles(self):
+        try:
+            if os.path.exists(self.reaction_roles_file):
+                with open(self.reaction_roles_file, 'r') as f:
+                    return json.load(f)
+            else:
+                # Create empty reaction roles file
+                with open(self.reaction_roles_file, 'w') as f:
+                    json.dump({}, f)
+                return {}
+        except Exception as e:
+            print(f"Error loading reaction roles: {e}")
+            return {}
+
+    def save_reaction_roles(self):
+        try:
+            with open(self.reaction_roles_file, 'w') as f:
+                json.dump(self.reaction_roles, f, indent=2)
+            return True
+        except Exception as e:
+            print(f"Error saving reaction roles: {e}")
+            return False
+
+    @commands.command()
+    @has_permissions(administrator=True)
+    async def reactrole(self, ctx, role_id: int, emoji: str, *, message: str):
+        try:
+            # Check if the role exists
+            role = ctx.guild.get_role(role_id)
+            if not role:
+                raise commands.CommandError(f"Role with ID {role_id} not found.")
+            
+            # Create the embed
+            embed = discord.Embed(
+                description=message,
+                color=discord.Color.blue()
+            )
+            
+            # Send the message with the embed
+            react_message = await ctx.send(embed=embed)
+            
+            # Add the reaction to the message
+            try:
+                await react_message.add_reaction(emoji)
+            except discord.HTTPException:
+                await react_message.delete()
+                raise commands.CommandError(f"Invalid emoji: {emoji}")
+            
+            # Save the reaction role information
+            guild_id = str(ctx.guild.id)
+            message_id = str(react_message.id)
+            
+            if guild_id not in self.reaction_roles:
+                self.reaction_roles[guild_id] = {}
+            
+            if message_id not in self.reaction_roles[guild_id]:
+                self.reaction_roles[guild_id][message_id] = {}
+            
+            self.reaction_roles[guild_id][message_id][emoji] = role_id
+            self.save_reaction_roles()
+            
+        except discord.Forbidden:
+            raise commands.CommandError("I don't have permission to add reactions or manage roles.")
+        except Exception as e:
+            raise commands.CommandError(f"Error creating reaction role: {str(e)}")
+
+    @commands.Cog.listener()
+    async def on_raw_reaction_add(self, payload):
+        # Ignore bot reactions
+        if payload.member.bot:
+            return
+            
+        guild_id = str(payload.guild_id)
+        message_id = str(payload.message_id)
+        emoji = str(payload.emoji)
+        
+        # Check if this is a reaction role message
+        if (guild_id in self.reaction_roles and 
+            message_id in self.reaction_roles[guild_id] and 
+            emoji in self.reaction_roles[guild_id][message_id]):
+            
+            try:
+                # Get the role ID and assign it
+                role_id = self.reaction_roles[guild_id][message_id][emoji]
+                role = payload.member.guild.get_role(role_id)
+                
+                if role:
+                    await payload.member.add_roles(role, reason="Reaction role")
+            except Exception as e:
+                print(f"Error assigning reaction role: {e}")
+
+    @commands.Cog.listener()
+    async def on_raw_reaction_remove(self, payload):
+        guild_id = str(payload.guild_id)
+        message_id = str(payload.message_id)
+        emoji = str(payload.emoji)
+        
+        # Check if this is a reaction role message
+        if (guild_id in self.reaction_roles and 
+            message_id in self.reaction_roles[guild_id] and 
+            emoji in self.reaction_roles[guild_id][message_id]):
+            
+            try:
+                # Get the guild and member
+                guild = self.client.get_guild(payload.guild_id)
+                if not guild:
+                    return
+                    
+                member = guild.get_member(payload.user_id)
+                if not member or member.bot:
+                    return
+                
+                # Get the role ID and remove it
+                role_id = self.reaction_roles[guild_id][message_id][emoji]
+                role = guild.get_role(role_id)
+                
+                if role and role in member.roles:
+                    await member.remove_roles(role, reason="Reaction role removed")
+            except Exception as e:
+                print(f"Error removing reaction role: {e}")
+
+    @reactrole.error
+    async def reactrole_error(self, ctx, error):
+        if isinstance(error, commands.MissingPermissions):
+            embed = discord.Embed(
+                title="Permission Denied",
+                description="You don't have permission to use this command.",
+                color=discord.Color.red()
+            )
+            await ctx.send(embed=embed)
+            return True
+        elif isinstance(error, commands.MissingRequiredArgument):
+            embed = discord.Embed(
+                title="Error",
+                description="Missing required argument. Usage: `!reactrole [role_id] [emoji] [message]`",
+                color=discord.Color.red()
+            )
+            await ctx.send(embed=embed)
+            return True
+        elif isinstance(error, commands.BadArgument):
+            embed = discord.Embed(
+                title="Error",
+                description="Invalid role ID. Please provide a valid role ID.",
+                color=discord.Color.red()
+            )
+            await ctx.send(embed=embed)
+            return True
+        elif isinstance(error, commands.CommandError):
+            embed = discord.Embed(
+                title="Error",
+                description=str(error),
+                color=discord.Color.red()
+            )
+            await ctx.send(embed=embed)
+            return True
+        return False
 
 async def setup(client):
     await client.add_cog(AdminCog(client))

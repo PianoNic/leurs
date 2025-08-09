@@ -19,6 +19,9 @@ from lastfm import LastFMCog
 from birthday import BirthdayCog
 from timezone import TimezoneCog
 from snipe import SnipeCog
+from blockedterms import BlockedTermsCog
+# Import your new cog here
+# from mycog import MyCog
 
 os.chdir(os.path.dirname(os.path.abspath(__file__)))
 
@@ -88,7 +91,6 @@ client.remove_command('help')
 
 @client.command(name='help')
 async def help_command(ctx):
-    """Redirects to the documentation website"""
     embed = discord.Embed(
         title="Leurs Bot Documentation",
         description="For a complete list of commands and their usage, please visit our documentation website:",
@@ -110,7 +112,6 @@ async def help_command(ctx):
 @client.command(name='prefix')
 @commands.has_permissions(administrator=True)
 async def change_prefix(ctx, new_prefix: str):
-    """Change the bot's prefix for this server (Admin only)"""
     if len(new_prefix) > 3:
         embed = discord.Embed(
             title="Error",
@@ -175,6 +176,8 @@ async def setup_hook():
         await client.add_cog(BirthdayCog(client))
         await client.add_cog(TimezoneCog(client))
         await client.add_cog(SnipeCog(client))
+        await client.add_cog(BlockedTermsCog(client))
+
         print("All cogs loaded successfully")
     except Exception as e:
         print(f"Error loading cogs: {e}")
