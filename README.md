@@ -6,6 +6,8 @@ A feature-rich Discord bot designed to enhance your server experience with econo
 ![Python](https://img.shields.io/badge/Python-3.8+-3776ab?style=for-the-badge&logo=python&logoColor=white)
 ![License](https://img.shields.io/badge/License-MIT-green?style=for-the-badge)
 
+**[docs.leurs.ch](https://docs.leurs.ch)**
+
 ## 🌟 Features
 
 ### 💰 Economy System
@@ -75,12 +77,8 @@ For detailed command documentation, setup guides, and configuration options, vis
 
 **[📖 docs.leurs.ch](https://docs.leurs.ch)**
 
-The documentation includes:
-- Complete command reference
-- Setup and configuration guides
-- API integration tutorials
-- Troubleshooting guides
-- Developer resources
+The documentation includes every command alongside how to use it.
+
 
 ## 🎮 Command Preview
 
@@ -105,10 +103,10 @@ We welcome contributions! Here's how you can help:
 
 ## 👥 Team
 
-- **[@bettercallmilan](https://github.com/bettercallmilan)** - Lead Developer
+- **[@bettercallmilan](https://github.com/bettercallmilan)** - Developer
 - **[@FlorianRuby](https://github.com/reazndev)** - Developer
-- **[@seakyy](https://github.com/seakyy)** - Developer
-- **[@lhilfiker](https://github.com/lhilfiker)** - Contributor
+- **[@seakyy](https://github.com/seakyy)** - *Contributor*
+- **[@lhilfiker](https://github.com/lhilfiker)** - Pull Request Master
 
 ## 📄 License
 
