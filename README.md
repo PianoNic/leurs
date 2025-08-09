@@ -1,185 +1,129 @@
-# Discord Balance Bot
+# Leurs - Discord Balance Bot
 
-A simple Discord balance bot to track virtual currency in your server.
+A feature-rich Discord bot designed to enhance your server experience with economy, moderation, music integration, and utility commands.
 
-## Commands
+![Discord Bot](https://img.shields.io/badge/Discord-Bot-7289da?style=for-the-badge&logo=discord&logoColor=white)
+![Python](https://img.shields.io/badge/Python-3.8+-3776ab?style=for-the-badge&logo=python&logoColor=white)
+![License](https://img.shields.io/badge/License-MIT-green?style=for-the-badge)
 
-Below is a list of available commands, grouped by their respective categories.
+## 🌟 Features
 
-### EconomyCog
+### 💰 Economy System
+- Virtual currency management with wallet and bank accounts
+- Betting and gambling mechanics
+- Job market with multiple career paths
+- Daily rewards and income opportunities
 
-- **`-bal`**  
-  Alias for `-balance`. Check your virtual currency balance.
-  
-- **`-balance`**  
-  Check your virtual currency balance.
-  
-- **`-beg`**  
-  Gives the user a random amount of money (1-100) and shows the new wallet balance. Has a 24-hour cooldown.
-  
-- **`-dep`**  
-  Alias for `-deposit`. Deposit money into your account.
-  
-- **`-deposit <amount>`**  
-  Deposit a specified amount (number, percentage like "50%", or "all") into your bank account from your wallet.
-  
-- **`-withdraw <amount>`**  
-  Withdraw a specified amount (number, percentage like "50%", or "all") from your bank account to your wallet.
-  
-- **`-wit`**  
-  Alias for `-withdraw`. Withdraw money from your account.
+### 🛡️ Advanced Moderation
+- Comprehensive user management (ban, kick, mute, jail)
+- Warning system with history tracking
+- Smart message deletion with cached search
+- Role management and automatic role restoration
+- Nickname management with history
 
-### GamblingCog
+### 🎵 Last.fm Integration
+- Real-time music tracking and display
+- Server-wide now playing overview
+- User music statistics and profiles
+- Scrobble counts and listening history
 
-- **`-gamble <amount>`**  
-  Gamble a specified amount of virtual currency.
+### 📊 Leveling System
+- XP-based progression system
+- Server leaderboards
+- Visual progress bars
+- Level-based rewards
 
-### JobMarketCog
+### ⚙️ Administrative Tools
+- Automated role saving and restoration
+- Message caching and advanced search
+- Custom embed creation
+- Auto-reactions and reaction roles
+- Bulk message management
 
-- **`-jobs [page]`**  
-  Display available jobs in the job market with pagination (default page is 1). Shows job details and unlock status.
-  
-- **`-buyjob <job>`**  
-  Purchase a job to unlock it. Costs coins based on the job's unlock price. Maximum of 3 jobs allowed at a time.
-  
-- **`-work`**  
-  Work at all your unlocked jobs to earn money (base pay + possible bonus). Has a 24-hour cooldown.
-  
-- **`-removejob <job>`**  
-  Remove a job from your current jobs list to free up a slot.
-  
-- **`-myjobs`**  
-  Display your currently owned jobs with their details.
+### 🎯 Utility Commands
+- Birthday tracking and reminders
+- Timezone management
+- Custom quote generation
+- Random lyric display
+- Information and help commands
 
-### OtherCog
+## 🚀 Quick Start
 
-- **`-code`**  
-  Outputs a secret code.
-  
-- **`-david`**  
-  Shares a random meme about David and his Raspberry Pi (image or GIF).
-  
-- **`-dsl`**  
-  Sends a link to [https://habenwirmorgenopl.info](https://habenwirmorgenopl.info) (might be down) in the chat.
-  
-- **`-geschichte`**  
-  Tells a short story about Milan and David.
-  
-- **`-hwmo`**  
-  Sends a link to [https://habenwirmorgenopl.info](https://habenwirmorgenopl.info) (might be down) in the chat.
-  
-- **`-opl`**  
-  Sends a link to [https://habenwirmorgenopl.info](https://habenwirmorgenopl.info) (might be down) in the chat.
-  
-- **`-ppl`**  
-  Sends a link to [https://habenwirmorgenopl.info](https://habenwirmorgenopl.info) (might be down) in the chat.
-  
-- **`-info`**  
-  Displays information about the bot, including GitHub repository, developers, contributors, and version.
-  
-- **`-hi`**  
-  Responds with "Hi I'm coffee!".
-  
-- **`-github`**  
-  Sends a link to GitHub's pull request documentation.
+1. **Clone the repository**
+   ```bash
+   git clone https://github.com/IM23d/discord-balance-bot.git
+   cd discord-balance-bot
+   ```
 
-### No Category
+2. **Install dependencies**
+   ```bash
+   pip install -r requirements.txt
+   ```
 
-- **`-help`**  
-  Shows this message with a list of available commands and their descriptions.
-  
-- **`-lyric`**  
-  Outputs a random lyric from the song "Call Me Maybe".
+3. **Set up environment variables**
+   - Create a `.env` file
+   - Add your Discord bot token and other required API keys
 
-# Discord Balance Bot
+4. **Run the bot**
+   ```bash
+   python main.py
+   ```
 
-A simple Discord balance bot to track virtual currency in your server.
+## 📚 Documentation
 
-## Commands
+For detailed command documentation, setup guides, and configuration options, visit our comprehensive documentation website:
 
-Below is a list of available commands, grouped by their respective categories.
+**[📖 docs.leurs.ch](https://docs.leurs.ch)**
 
-### EconomyCog
+The documentation includes:
+- Complete command reference
+- Setup and configuration guides
+- API integration tutorials
+- Troubleshooting guides
+- Developer resources
 
-- **`-bal`**  
-  Alias for `-balance`. Check your virtual currency balance.
-  
-- **`-balance`**  
-  Check your virtual currency balance.
-  
-- **`-beg`**  
-  Gives the user a random amount of money (1-100) and shows the new wallet balance. Has a 24-hour cooldown.
-  
-- **`-dep`**  
-  Alias for `-deposit`. Deposit money into your account.
-  
-- **`-deposit <amount>`**  
-  Deposit a specified amount (number, percentage like "50%", or "all") into your bank account from your wallet.
-  
-- **`-withdraw <amount>`**  
-  Withdraw a specified amount (number, percentage like "50%", or "all") from your bank account to your wallet.
-  
-- **`-wit`**  
-  Alias for `-withdraw`. Withdraw money from your account.
+## 🎮 Command Preview
 
-### GamblingCog
+| Category | Examples |
+|----------|----------|
+| **Economy** | `-balance`, `-beg`, `-gamble`, `-deposit` |
+| **Jobs** | `-jobs`, `-work`, `-buyjob`, `-myjobs` |
+| **Moderation** | `-warn`, `-ban`, `-mute`, `-jail` |
+| **Music** | `-np`, `-lastfm`, `-servernowplaying` |
+| **Levels** | `-rank`, `-leveltop`, `-setlevel` |
+| **Utility** | `-info`, `-birthday`, `-timezone` |
 
-- **`-gamble <amount>`**  
-  Gamble a specified amount of virtual currency.
+## 🤝 Contributing
 
-### JobMarketCog
+We welcome contributions! Here's how you can help:
 
-- **`-jobs [page]`**  
-  Display available jobs in the job market with pagination (default page is 1). Shows job details and unlock status.
-  
-- **`-buyjob <job>`**  
-  Purchase a job to unlock it. Costs coins based on the job's unlock price. Maximum of 3 jobs allowed at a time.
-  
-- **`-work`**  
-  Work at all your unlocked jobs to earn money (base pay + possible bonus). Has a 24-hour cooldown.
-  
-- **`-removejob <job>`**  
-  Remove a job from your current jobs list to free up a slot.
-  
-- **`-myjobs`**  
-  Display your currently owned jobs with their details.
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
 
-### OtherCog
+## 👥 Team
 
-- **`-code`**  
-  Outputs a secret code.
-  
-- **`-david`**  
-  Shares a random meme about David and his Raspberry Pi (image or GIF).
-  
-- **`-dsl`**  
-  Sends a link to [https://habenwirmorgenopl.info](https://habenwirmorgenopl.info) (might be down) in the chat.
-  
-- **`-geschichte`**  
-  Tells a short story about Milan and David.
-  
-- **`-hwmo`**  
-  Sends a link to [https://habenwirmorgenopl.info](https://habenwirmorgenopl.info) (might be down) in the chat.
-  
-- **`-opl`**  
-  Sends a link to [https://habenwirmorgenopl.info](https://habenwirmorgenopl.info) (might be down) in the chat.
-  
-- **`-ppl`**  
-  Sends a link to [https://habenwirmorgenopl.info](https://habenwirmorgenopl.info) (might be down) in the chat.
-  
-- **`-info`**  
-  Displays information about the bot, including GitHub repository, developers, contributors, and version.
-  
-- **`-hi`**  
-  Responds with "Hi I'm coffee!".
-  
-- **`-github`**  
-  Sends a link to GitHub's pull request documentation.
+- **[@bettercallmilan](https://github.com/bettercallmilan)** - Lead Developer
+- **[@FlorianRuby](https://github.com/reazndev)** - Developer
+- **[@seakyy](https://github.com/seakyy)** - Developer
+- **[@lhilfiker](https://github.com/lhilfiker)** - Contributor
 
-### No Category
+## 📄 License
 
-- **`-help`**  
-  Shows this message with a list of available commands and their descriptions.
-  
-- **`-lyric`**  
-  Outputs a random lyric from the song "Call Me Maybe".
+This project is licensed under the MIT License - see the [`LICENSE`](LICENSE) file for details.
+
+## 🔗 Links
+
+- **Documentation**: [docs.leurs.ch](https://docs.leurs.ch)
+- **Issues**: [GitHub Issues](https://github.com/IM23d/discord-balance-bot/issues)
+- **Pull Requests**: [GitHub PRs](https://github.com/IM23d/discord-balance-bot/pulls)
+
+## ⭐ Support
+
+If you find this project helpful, please consider giving it a star! It helps us reach more users and contributors.
+
+---
+
+**Made with ❤️ by the Leurs Team**
