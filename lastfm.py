@@ -10,7 +10,7 @@ import requests
 
 load_dotenv()
 
-lastfmKey = os.getenv("lastfm_key")
+lastfmKey = os.getenv("LAST_FM_KEY")
 
 class LastFMCog(commands.Cog):
     def __init__(self, client):
@@ -373,7 +373,7 @@ import requests
 
 load_dotenv()
 
-lastfmKey = os.getenv("lastfm_key")
+lastfmKey = os.getenv("LAST_FM_KEY")
 
 class LastFMCog(commands.Cog):
     def __init__(self, client):
