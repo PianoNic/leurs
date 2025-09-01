@@ -131,8 +131,8 @@ For complete command documentation, visit **[docs.leurs.ch](https://docs.leurs.c
     </td>
     <td align="center">
       <a href="https://github.com/reazndev">
-        <img src="https://github.com/reazndev.png" width="80px" alt="FlorianRuby"/>
-        <br /><sub><b>Florian</b></sub>
+        <img src="https://github.com/reazndev.png" width="80px" alt="Reazn"/>
+        <br /><sub><b>Reazn</b></sub>
         <br /><sub>Developer</sub>
       </a>
     </td>
@@ -179,5 +179,6 @@ If Leurs has enhanced your Discord server experience, please consider:
 - **Pull Requests**: [GitHub PRs](https://github.com/IM23d/leurs/pulls)
 
 ---
+
 
 <p align="center">Made with ❤️ by the <strong>Leurs Team</strong></p>
